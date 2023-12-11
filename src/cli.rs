@@ -34,8 +34,12 @@ pub const TIMEOUT: Duration = Duration::from_secs(16);
 pub struct Cli {
     /// root of the project directory (./ indicates the current dir)
     pub path: PathBuf,
-    /// optional data to pass as an argument indead of passing via stdin
-    pub data: Option<PathBuf>,
+    /// optional json string to pass as an argument instead of passing via stdin
+    #[arg(short,long,default_value=None)]
+    pub json: Option<String>,
+    /// optional file path to pass as an argument instead of passing via stdin
+    #[arg(short,long,default_value=None)]
+    pub file: Option<PathBuf>,
 }
 
 impl Cli{
@@ -53,18 +57,46 @@ pub struct Input {
     pub json: Map<String, Value>
 }
 
+impl Input {
+
+    pub fn get() -> Result<Self> {
+        let args = Cli::args();
+        let path = args.path.clone();
+        let json = match Data::new(args) {
+            Data::String(string) => Data::string(string),
+            Data::File(path) => Data::file(path),
+            Data::IO(stdin) => Data::io(stdin),
+        }?;
+        Ok(Self{path, json})
+    }
+
+    pub fn get_with_timeout() -> Result<Self> {
+        let (data, timeout) = channel();
+        spawn(
+            move || {
+                data.send( Self::get() );
+            });
+        timeout.recv_timeout(TIMEOUT)?
+    }
+
+}
 
 
 
 
-pub enum Data {
+
+enum Data {
+    String(String),
     File(PathBuf),
     IO(Stdin),
 }
 
 impl Data {
-    pub fn new(data: Option<PathBuf>) -> Self {
-        if let Some(file) = data {
+    fn new(args: Cli) -> Self {
+        if let Some(string) = args.json {
+            Self::String(string)
+        }
+        else if let Some(file) = args.file {
             Self::File(file)
         }
         else {
@@ -72,23 +104,8 @@ impl Data {
         }
     }
 
-    pub fn get() -> Result<Input> {
-        let args = Cli::args();
-        let path = args.path;
-        let json = match Self::new(args.data) {
-            Self::File(file) => Self::file(file),
-            Self::IO(stdin) => Self::io(stdin),
-        }?;
-        Ok(Input{path, json})
-    }
-
-    pub fn get_with_timeout() -> Result<Input> {
-        let (data, timeout) = channel();
-        spawn(
-            move || {
-                data.send( Self::get() );
-            });
-        timeout.recv_timeout(TIMEOUT)?
+    fn string (s: String) -> Result<Map<String, Value>> {
+        Ok(from_str(&s)?)
     }
 
     fn file (file: PathBuf) -> Result<Map<String, Value>> {
