@@ -20,11 +20,15 @@ As such, it will not build missing components on startup.
 
 This binary is intended to be called as an embedded CLI. 
 
-It expects 2 arguments:
+It expects 3 arguments:
 
 1. A path to the working directory. This Should be the same as the path supplied to tcp_localhost.
 
-2. An optional string of valid JSON. If this argument is not supplied, it will expect this data via StdIn.
+2. An optional string of valid JSON.
+
+3. An optional filepath.
+
+Note: If neighter 2 nor 3 are supplied, this binary expects the buffer via StdIn.
 
 The public API for this binary provides the Data::get() and Data::get_with_timeout() methods to process arguments.
 
