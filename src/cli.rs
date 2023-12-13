@@ -1,24 +1,13 @@
 use clap::Parser;
 use anyhow::Result;
-use serde_json::{
-    Map,
-    Value,
-    from_str,
-};
+use serde_json::{ Map, Value, from_str, };
 use std::{
     fs::read_to_string,
-    io::{
-        Read,
-        Stdin,
-        stdin,
-    },
+    io::{ Read, Stdin, stdin, },
     path::PathBuf,
     time::Duration,
-    sync::mpsc::{
-        channel,
-        RecvTimeoutError,
-    },
     thread::spawn,
+    sync::mpsc::{ RecvTimeoutError, channel, },
 };
 
 
@@ -63,7 +52,7 @@ impl Input {
         let args = Cli::args();
         let path = args.path.clone();
         let json = match Data::new(args) {
-            Data::String(string) => Data::string(string),
+            Data::String(string) => Data::string(&string),
             Data::File(path) => Data::file(path),
             Data::IO(stdin) => Data::io(stdin),
         }?;
@@ -104,8 +93,8 @@ impl Data {
         }
     }
 
-    fn string (s: String) -> Result<Map<String, Value>> {
-        Ok(from_str(&s)?)
+    fn string (s: &str) -> Result<Map<String, Value>> {
+        Ok(from_str(s)?)
     }
 
     fn file (file: PathBuf) -> Result<Map<String, Value>> {

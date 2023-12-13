@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use html_nomicon::cli::*;
+use html_nomicon::nomming::*;
 
 fn main() -> Result<()> {
 
