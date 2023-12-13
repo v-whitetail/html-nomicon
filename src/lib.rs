@@ -52,10 +52,10 @@ pub mod nomming {
 
 
     #[derive(Debug, Clone)]
-    pub struct Buffer {
-        projdata: Value,
-        userdata: Value,
-        partdata: Value,
+    pub struct Buffer<'b> {
+        projdata: &'b Value,
+        userdata: &'b Value,
+        partdata: &'b Value,
     }
     #[derive(Debug, Error)]
     pub enum MissingFieldError{
@@ -66,20 +66,17 @@ pub mod nomming {
         #[error("missing part data")]
         PartData,
     }
-    impl Buffer {
-        pub fn new(json: Map<String, Value>) -> Result<Self> {
+    impl<'b> Buffer<'b> {
+        pub fn new(json: &'b Map<String, Value>) -> Result<Self> {
             let projdata = json
                 .get("projdata")
-                .ok_or(MissingFieldError::ProjData)?
-                .clone();
+                .ok_or(MissingFieldError::ProjData)?;
             let userdata = json
                 .get("userdata")
-                .ok_or(MissingFieldError::UserData)?
-                .clone();
+                .ok_or(MissingFieldError::UserData)?;
             let partdata = json
                 .get("partdata")
-                .ok_or(MissingFieldError::PartData)?
-                .clone();
+                .ok_or(MissingFieldError::PartData)?;
             Ok(Self{projdata, userdata, partdata})
         }
         pub fn projdata (&self) -> Result<&Map<String, Value>> {

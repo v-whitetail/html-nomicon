@@ -10,7 +10,7 @@ fn main() -> Result<()> {
 
     let (path, json) = (input.path, input.json);
 
-    let buffer = Buffer::new(json.clone())?;
+    let buffer = Buffer::new(&json)?;
 
     let reports = buffer.listed_reports()?;
 
