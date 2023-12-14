@@ -119,15 +119,20 @@ pub mod nomming {
                     )
             }
         }
-        pub fn listed_reports (&self) -> Result<Vec<&str>> {
+        pub fn listed_reports (&'b self) -> Result<Vec<&str>> {
+
             let is_reports = |value| value == "rep";
             let is_not_headers = |key| key != "headers";
-            let missing_report_header = anyhow!(
-                "headers array does not contain \"rep\" variable"
-                );
-            let no_listed_reports = anyhow!(
-                "partdata does not contain reports array"
-                );
+            let get_reports_array = |value: &'b Value, index|
+                if let Value::Array(data) = value { data.get(index) }
+                else { None };
+            let get_listed_reports = |value: &'b Value|
+                if let Value::Array(reports) = value { Some(reports) }
+                else { None };
+            let no_listed_reports = anyhow!("partdata does not contain reports array");
+            let missing_report_header = anyhow!("headers array does not contain \"rep\" variable");
+
+
             let reports_index = self
                 .headers()?
                 .into_iter()
@@ -137,26 +142,17 @@ pub mod nomming {
                 .partdata()?
                 .into_iter()
                 .filter(|&(key, value)| is_not_headers(key))
-                .filter_map(|(key, value)| 
-                            if let Value::Array(data) = value {
-                                data.get(reports_index)
-                            } else { None }
-                           )
-                .filter_map(|value|
-                            if let Value::Array(reports) = value {
-                                Some(reports)
-                            } else { None }
-                           )
+                .filter_map(|(key, value)| get_reports_array(value, reports_index))
+                .filter_map(|value| get_listed_reports(value))
                 .flatten()
                 .filter_map(|report| report.as_str() )
                 .collect::<Vec<_>>();
+
             reports.sort_unstable();
             reports.dedup();
-            if reports.is_empty() {
-                Err(no_listed_reports)
-            } else {
-                Ok(reports)
-            }
+
+            if reports.is_empty() { Err(no_listed_reports) }
+            else { Ok(reports) }
         }
     }
 
