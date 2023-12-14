@@ -84,8 +84,7 @@ pub mod nomming {
                 Ok(projdata)
             } else {
                 bail!(
-                    r"expeted project data to be a json obect
-                    found {:#?}",
+                    "expeted project data to be a json obect\n\tfound:\n{:#?}",
                     self.projdata
                     )
             }
@@ -95,8 +94,7 @@ pub mod nomming {
                 Ok(projdata)
             } else {
                 bail!(
-                    r"expeted user data to be a json obect
-                    found {:#?}",
+                    "expeted user data to be a json obect\n\tfound:\n{:#?}",
                     self.userdata
                     )
             }
@@ -106,19 +104,17 @@ pub mod nomming {
                 Ok(projdata)
             } else {
                 bail!(
-                    r"expeted part data to be a json obect
-                    found {:#?}",
+                    "expeted part data to be a json obect\n\tfound:\n{:#?}",
                     self.partdata
                     )
             }
         }
         pub fn headers (&self) -> Result<&Vec<Value>> {
             if let Some(Value::Array(headers)) = self.partdata()?.get("headers") {
-                    Ok(headers)
+                Ok(headers)
             } else {
                 bail!(
-                    r"expeted headers to be a json array
-                    found {:#?}",
+                    "expeted headers to be a json array\n\tfound:\n{:#?}",
                     self.partdata
                     )
             }
@@ -126,17 +122,17 @@ pub mod nomming {
         pub fn listed_reports (&self) -> Result<Vec<&str>> {
             let is_reports = |value| value == "rep";
             let is_not_headers = |key| key != "headers";
-            let missing_rep_index = anyhow!(
-                "headers array does not contain rep variable"
+            let missing_report_header = anyhow!(
+                "headers array does not contain \"rep\" variable"
                 );
-            let empty_rep_data = anyhow!(
+            let no_listed_reports = anyhow!(
                 "partdata does not contain reports array"
                 );
             let reports_index = self
                 .headers()?
                 .into_iter()
                 .position(|header| is_reports(header))
-                .ok_or(missing_rep_index)?;
+                .ok_or(missing_report_header)?;
             let mut reports = self
                 .partdata()?
                 .into_iter()
@@ -157,7 +153,7 @@ pub mod nomming {
             reports.sort_unstable();
             reports.dedup();
             if reports.is_empty() {
-                Err(empty_rep_data)
+                Err(no_listed_reports)
             } else {
                 Ok(reports)
             }
@@ -165,6 +161,85 @@ pub mod nomming {
     }
 
 
+
+    pub struct Report<'r> {
+        body: &'r str,
+        title_block: &'r str,
+        data_block: &'r str,
+        sort_by_row: &'r str,
+        pattern_row: &'r str,
+    }
+    impl<'r> Report<'r> {
+        pub fn new(s: &'r str) -> IResult<&str, Self> {
+            let (_, body) = Self::body(s)?;
+            let (_, (title_block, data_block)) = Self::blocks(s)?;
+            let (_, (sort_by_row, pattern_row)) = Self::rows(s)?;
+            Ok((s, Self{
+                body,
+                title_block,
+                data_block,
+                sort_by_row,
+                pattern_row,
+            }))
+        }
+        fn blocks(s: &str) -> IResult<&str, (&str, &str)> {
+            tuple((
+                    Self::title_block,
+                    Self::data_block,
+                    ))(s)
+        }
+        fn rows(s: &str) -> IResult<&str, (&str, &str)> {
+            tuple((
+                    Self::sort_by_row,
+                    Self::pattern_row,
+                    ))(s)
+        }
+        fn body(s: &str) -> IResult<&str, &str> {
+            preceded(
+                pair(
+                    take_until("<body>"),
+                    tag("<body>")
+                    ),
+                    take_until("</body>")
+                    )(s)
+        }
+        fn title_block(s: &str) -> IResult<&str, &str> {
+            preceded(
+                pair(
+                    take_until("<table class=\"title_block\">"),
+                    tag("<table class=\"title_block\">")
+                    ),
+                    take_until("</table>")
+                    )(s)
+        }
+        fn data_block(s: &str) -> IResult<&str, &str> {
+            preceded(
+                pair(
+                    take_until("<table class=\"data_block\">"),
+                    tag("<table class=\"data_block\">")
+                    ),
+                    take_until("</table>")
+                    )(s)
+        }
+        fn sort_by_row(s: &str) -> IResult<&str, &str> {
+            preceded(
+                pair(
+                    take_until("<tr class=\"sort_by_row\">"),
+                    tag("<tr class=\"sort_by_row\">")
+                    ),
+                    take_until("</tr>")
+                    )(s)
+        }
+        fn pattern_row(s: &str) -> IResult<&str, &str> {
+            preceded(
+                pair(
+                    take_until("<tr class=\"pattern_row\">"),
+                    tag("<tr class=\"pattern_row\">")
+                    ),
+                    take_until("</tr>")
+                    )(s)
+        }
+    }
     fn is_html(p: &PathBuf) -> bool {
         if let Some(extension) = p.extension() {
             extension == "html"

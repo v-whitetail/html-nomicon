@@ -12,6 +12,8 @@ fn main() -> Result<()> {
 
     let buffer = Buffer::new(&json)?;
 
+    let userdata = buffer.userdata()?;
+
     let reports = buffer.listed_reports()?;
 
     println!("{reports:#?}");
