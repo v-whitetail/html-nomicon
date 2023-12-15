@@ -4,51 +4,48 @@ pub mod cli;
 
 pub mod nomming {
 
-    use std::{
-        fs::{
-            ReadDir,
-            DirEntry,
-            read_dir,
-        },
-        path::{
-            Path,
-            PathBuf,
-        },
-    };
+    use std::path::PathBuf;
+    use walkdir::WalkDir;
     use nom::{
         IResult,
-        multi::*,
-        branch::*,
-        sequence::*,
-        character::*,
-        combinator::*,
-        bytes::complete::*,
+        sequence::{
+            pair,
+            tuple,
+            preceded,
+        },
+        bytes::complete::{
+            tag,
+            take_until,
+        },
     };
     use anyhow::{Result, bail, anyhow};
     use thiserror::Error;
     use serde_json::{Map, Value};
 
+
+
+
+
     #[derive(Debug)]
     pub struct Documents {
-        templates: ReadDir,
-        reports: ReadDir,
-        resources: ReadDir,
+        templates: WalkDir,
+        reports: WalkDir,
+        resources: WalkDir,
     }
-
     impl Documents {
         fn new(path: &PathBuf) -> Result<Self> {
-            let templates = path
-                .join("Templates")
-                .read_dir()?;
-            let reports = path
-                .join("Reports")
-                .read_dir()?;
-            let resources = path
-                .join("Resources")
-                .read_dir()?;
+            let templates = WalkDir::new(path.join("Templates"))
+                .max_depth(1);
+            let reports = WalkDir::new(path.join("Reports"))
+                .max_depth(1);
+            let resources = WalkDir::new(path.join("Resources"))
+                .max_depth(2);
             Ok(Self{templates, reports, resources})
         }
     }
+
+
+
 
 
     #[derive(Debug, Clone)]
@@ -119,7 +116,7 @@ pub mod nomming {
                     )
             }
         }
-        pub fn listed_reports (&'b self) -> Result<Vec<&str>> {
+        pub fn listed_reports(&'b self) -> Result<Vec<&str>> {
 
             let is_reports = |value| value == "rep";
             let is_not_headers = |key| key != "headers";
@@ -158,15 +155,18 @@ pub mod nomming {
 
 
 
-    pub struct Report<'r> {
-        body: &'r str,
-        title_block: &'r str,
-        data_block: &'r str,
-        sort_by_row: &'r str,
-        pattern_row: &'r str,
+
+
+    #[derive(Debug, Clone)]
+    pub struct Template<'t> {
+        body: &'t str,
+        title_block: &'t str,
+        data_block: &'t str,
+        sort_by_row: &'t str,
+        pattern_row: &'t str,
     }
-    impl<'r> Report<'r> {
-        pub fn new(s: &'r str) -> IResult<&str, Self> {
+    impl<'t> Template<'t> {
+        pub fn new(s: &'t str) -> IResult<&str, Self> {
             let (_, body) = Self::body(s)?;
             let (_, (title_block, data_block)) = Self::blocks(s)?;
             let (_, (sort_by_row, pattern_row)) = Self::rows(s)?;
@@ -236,10 +236,22 @@ pub mod nomming {
                     )(s)
         }
     }
-    fn is_html(p: &PathBuf) -> bool {
-        if let Some(extension) = p.extension() {
-            extension == "html"
-        } else { false }
+
+
+
+    pub struct BatchProcessor<'b> {
+        buffer: Buffer<'b>,
+        documents: Documents,
+    }
+    impl<'b> BatchProcessor<'b> {
+        pub fn new(json: &'b Map<String, Value>, path: &PathBuf) -> Result<Self> {
+
+            let buffer = Buffer::new(json)?;
+            let documents = Documents::new(path)?;
+            buffer.listed_reports()?;
+
+            Ok(Self{buffer, documents})
+        }
     }
 }
 
