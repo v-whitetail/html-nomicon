@@ -1,5 +1,6 @@
 use clap::Parser;
 use anyhow::Result;
+use serde::Deserialize;
 use serde_json::{ Map, Value, from_str, };
 use std::{
     fs::read_to_string,
@@ -9,6 +10,7 @@ use std::{
     thread::spawn,
     sync::mpsc::{ RecvTimeoutError, channel, },
 };
+use super::nomming::Buffer;
 
 
 
@@ -43,7 +45,7 @@ impl Cli{
 
 pub struct Input {
     pub path: PathBuf,
-    pub json: Map<String, Value>
+    pub json: Buffer,
 }
 
 impl Input {
@@ -93,15 +95,15 @@ impl Data {
         }
     }
 
-    fn string (s: &str) -> Result<Map<String, Value>> {
+    fn string (s: &str) -> Result<Buffer> {
         Ok(from_str(s)?)
     }
 
-    fn file (file: PathBuf) -> Result<Map<String, Value>> {
+    fn file (file: PathBuf) -> Result<Buffer> {
         Ok(from_str(&read_to_string(file)?)?)
     }
 
-    fn io (mut stdin: Stdin) -> Result<Map<String, Value>> {
+    fn io (mut stdin: Stdin) -> Result<Buffer> {
         let mut buffer = String::new();
         stdin.read_to_string(&mut buffer)?;
         Ok(from_str(&buffer)?)
