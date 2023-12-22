@@ -26,7 +26,7 @@ pub mod nomming {
     use anyhow::{Result, bail, anyhow};
     use thiserror::Error;
     use serde::{Serialize, Deserialize};
-    use serde_json::{Map, Value};
+    use serde_json::{Map, Value, json};
 
 
 
@@ -56,6 +56,25 @@ pub mod nomming {
         projdata: Map<String, Value>,
         userdata: Map<String, Value>,
         partdata: Map<String, Value>,
+    }
+    impl Buffer {
+        pub fn get_project_value(&self, key: &str) -> Option<&Value> {
+            self.projdata.get(key)
+        }
+        pub fn get_user_value(&self, key: &str) -> Option<&Value> {
+            self.projdata.get(key)
+        }
+        pub fn get_part_value(&self, key: &str) -> Option<&Value> {
+            self.projdata.get(key)
+        }
+        pub fn get_part_headers(&self) -> Option<&Value> {
+            self.projdata.get("headers")
+        }
+        pub fn index_part_headers(&self, value: &str) -> Option<usize> {
+            if let Some(Value::Array(headers)) = Self::get_part_headers(self) {
+                headers.iter().position(|v| *v == json!(value))
+            } else { None }
+        }
     }
 
 
