@@ -204,13 +204,6 @@ pub mod nomming {
 
 
     #[derive(Debug, Clone)]
-    pub struct Dispatch<'b> {
-        buffer: &'b Buffer,
-        documents: &'b Documents,
-        batch: TemplateBatch<'b>,
-        log: Option<PathBuf>,
-    }
-    #[derive(Debug, Clone)]
     enum TemplateBatch<'b> {
         Empty,
         Raw(Box<[String]>),
@@ -228,18 +221,27 @@ pub mod nomming {
             } else { self.clone() }
         }
     }
+    #[derive(Debug, Clone)]
+    pub struct Dispatch<'b> {
+        buffer: &'b Buffer,
+        documents: &'b Documents,
+        log: Option<PathBuf>,
+        raw_batch: TemplateBatch<'b>,
+        parsed_batch: TemplateBatch<'b>,
+    }
     impl<'b> Dispatch<'b> {
         pub fn new(buffer: &'b Buffer, documents: &'b Documents) -> Self {
             let log = None;
-            let batch = TemplateBatch::Empty;
-            Self{buffer, documents, batch, log}
+            let raw_batch = TemplateBatch::Empty;
+            let parsed_batch = TemplateBatch::Empty;
+            Self{buffer, documents, raw_batch, parsed_batch, log}
         }
         pub fn with_log(mut self, log: PathBuf) -> Self {
             self.log = Some(log);
             return self
         }
-        pub fn read_all(mut self) -> Result<Self> {
-            self.batch = TemplateBatch::Raw(
+        pub fn read_all(&'b mut self) -> Result<&Self> {
+            self.raw_batch = TemplateBatch::Raw(
                 self.buffer 
                 .list_all_reports()? 
                 .iter() 
@@ -252,9 +254,9 @@ pub mod nomming {
             Ok(self)
         }
         pub fn parse_all(&'b self) -> Self {
-            let mut processed_dispatch = self.clone();
-            processed_dispatch.batch = self.batch.process();
-            processed_dispatch
+            let mut new = self.clone();
+            new.parsed_batch = self.raw_batch.process();
+            new
         }
         fn log(&self, template: &PathBuf) {
             if let Some(log) = &self.log {
