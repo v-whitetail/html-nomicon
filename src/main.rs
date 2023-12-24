@@ -8,9 +8,10 @@ fn main() -> Result<()> {
 
     let documents = Documents::new(&input.path)?;
 
-    let _templates = Dispatch::new(&input.json, &documents)
-        .log("dispatch.log".into())
-        .read_all()?;
+    let templates = Dispatch::new(&input.json, &documents)
+        .with_log("dispatch.log".into())
+        .read_all()?
+        .parse_all();
 
     Ok(())
 

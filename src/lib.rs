@@ -26,6 +26,7 @@ pub mod nomming {
 
 
 
+
     #[derive(Debug, Clone)]
     pub struct Documents {
         pub root: PathBuf,
@@ -68,6 +69,7 @@ pub mod nomming {
 
 
 
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Buffer {
         projdata: Map<String, Value>,
@@ -102,6 +104,7 @@ pub mod nomming {
 
 
 
+
     #[derive(Debug, Clone)]
     pub struct Template<'b> {
         body: &'b str,
@@ -122,12 +125,12 @@ pub mod nomming {
     impl<'b> Block {
         fn open_tag(&self) -> String {
             match self {
-                Self::Th(class) => format!("<th class=\"{class}\">"),
-                Self::Tr(class) => format!("<tr class=\"{class}\">"),
-                Self::Td(class) => format!("<td class=\"{class}\">"),
-                Self::Table(class) => format!("<table class=\"{class}\">"),
-                Self::Thead(class) => format!("<thead class=\"{class}\">"),
-                Self::Tfoot(class) => format!("<tfoot class=\"{class}\">"),
+                Self::Th(class) => format!("<th class=\"{class}\""),
+                Self::Tr(class) => format!("<tr class=\"{class}\""),
+                Self::Td(class) => format!("<td class=\"{class}\""),
+                Self::Table(class) => format!("<table class=\"{class}\""),
+                Self::Thead(class) => format!("<thead class=\"{class}\""),
+                Self::Tfoot(class) => format!("<tfoot class=\"{class}\""),
             }
         }
         fn close_tag(&self) -> &'static str {
@@ -143,9 +146,10 @@ pub mod nomming {
         fn parse(&self, s: &'b str) -> IResult<&'b str, &'b str> {
             preceded(
                 take_until(self.open_tag().as_str()),
-                recognize(
-                    take_until(self.close_tag())
-                    ),
+                recognize(pair(
+                    take_until(self.close_tag()),
+                    tag(self.close_tag()),
+                    )),
                     )(s)
         }
     }
@@ -162,31 +166,31 @@ pub mod nomming {
                 pattern_row,
             }))
         }
-        fn title_block(s: &str) -> IResult<&str, &str> {
-            Block::Table("title_block").parse(s)
-        }
-        fn data_block(s: &str) -> IResult<&str, &str> {
-            Block::Table("data_block").parse(s)
-        }
-        fn sort_by_row(s: &str) -> IResult<&str, &str> {
+        pub fn sort_by_row(s: &str) -> IResult<&str, &str> {
             Block::Tr("sort_by_row").parse(s)
         }
-        fn pattern_row(s: &str) -> IResult<&str, &str> {
+        pub fn pattern_row(s: &str) -> IResult<&str, &str> {
             Block::Tr("pattern_row").parse(s)
         }
-        fn body(s: &str) -> IResult<&str, &str> {
+        pub fn title_block(s: &str) -> IResult<&str, &str> {
+            Block::Table("title_block").parse(s)
+        }
+        pub fn data_block(s: &str) -> IResult<&str, &str> {
+            Block::Table("data_block").parse(s)
+        }
+        pub fn body(s: &str) -> IResult<&str, &str> {
             preceded(
                 take_until("<body>"),
-                recognize( take_until("</body>") ),
+                recognize(pair( take_until("</body>"), tag("</body>"))),
                 )(s)
         }
-        fn blocks(s: &str) -> IResult<&str, (&str, &str)> {
+        pub fn blocks(s: &str) -> IResult<&str, (&str, &str)> {
             tuple((
                     Self::title_block,
                     Self::data_block,
                     ))(s)
         }
-        fn rows(s: &str) -> IResult<&str, (&str, &str)> {
+        pub fn rows(s: &str) -> IResult<&str, (&str, &str)> {
             tuple((
                     Self::sort_by_row,
                     Self::pattern_row,
@@ -196,35 +200,63 @@ pub mod nomming {
 
 
 
+
+
+
     #[derive(Debug, Clone)]
     pub struct Dispatch<'b> {
         buffer: &'b Buffer,
         documents: &'b Documents,
+        batch: TemplateBatch<'b>,
         log: Option<PathBuf>,
+    }
+    #[derive(Debug, Clone)]
+    enum TemplateBatch<'b> {
+        Empty,
+        Raw(Box<[String]>),
+        Parsed(Box<[Template<'b>]>),
+    }
+    impl<'b> TemplateBatch<'b> {
+        fn process(&'b self) -> Self {
+            if let Self::Raw(batch) = self {
+                Self::Parsed(
+                    batch 
+                    .par_iter()
+                    .filter_map( |template| Template::new(template).ok())
+                    .map( |(input, output)| output)
+                    .collect())
+            } else { self.clone() }
+        }
     }
     impl<'b> Dispatch<'b> {
         pub fn new(buffer: &'b Buffer, documents: &'b Documents) -> Self {
             let log = None;
-            Self{buffer, documents, log}
+            let batch = TemplateBatch::Empty;
+            Self{buffer, documents, batch, log}
         }
-        pub fn log(&self, log: PathBuf) -> Self {
-            let (buffer, documents) = (self.buffer, self.documents);
-            let log = Some(log);
-            Self{buffer, documents, log}
+        pub fn with_log(mut self, log: PathBuf) -> Self {
+            self.log = Some(log);
+            return self
         }
-        pub fn read_all(&self) -> Result<Box<[String]>> {
-            let templates = self 
-                .buffer 
+        pub fn read_all(mut self) -> Result<Self> {
+            self.batch = TemplateBatch::Raw(
+                self.buffer 
                 .list_all_reports()? 
                 .iter() 
                 .filter_map( |&stem| self.documents.check_template(stem)) 
-                .inspect( |path| self.dispatch_log(path))
+                .inspect( |path| self.log(path))
                 .par_bridge()
                 .filter_map( |path| read_to_string(path).ok())
-                .collect();
-            Ok(templates)
+                .collect()
+                );
+            Ok(self)
         }
-        fn dispatch_log(&self, template: &PathBuf) {
+        pub fn parse_all(&'b self) -> Self {
+            let mut processed_dispatch = self.clone();
+            processed_dispatch.batch = self.batch.process();
+            processed_dispatch
+        }
+        fn log(&self, template: &PathBuf) {
             if let Some(log) = &self.log {
                 println!("{template:#?}");
                 OpenOptions::new()
