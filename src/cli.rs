@@ -63,10 +63,7 @@ impl Input {
 
     pub fn get_with_timeout() -> Result<Self> {
         let (data, timeout) = channel();
-        spawn(
-            move || {
-                data.send( Self::get() );
-            });
+        spawn( move || data.send( Self::get() ));
         timeout.recv_timeout(TIMEOUT)?
     }
 

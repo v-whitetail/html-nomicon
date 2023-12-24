@@ -4,19 +4,20 @@ pub mod cli;
 
 pub mod nomming {
 
-    use serde::{ Serialize, Deserialize, };
-    use anyhow::{ Result, anyhow, bail, };
-    use serde_json::{ Map, Value, json, };
     use rayon::prelude::*;
+    use anyhow::{ anyhow, Result, };
+    use serde::{ Serialize, Deserialize, };
+    use serde_json::{ json, Map, Value, };
 
     use std::{
         cmp::max,
-        sync::Arc,
+        io::Write,
         path::PathBuf,
-        fs::{ File, ReadDir, OpenOptions, read_dir, read_to_string, },
+        fs::{ OpenOptions, read_dir, read_to_string, canonicalize, },
     };
     use nom::{
         IResult,
+        combinator::recognize,
         sequence::{ pair, tuple, preceded, },
         bytes::complete::{ tag, take_until, },
     };
@@ -26,14 +27,15 @@ pub mod nomming {
 
 
     #[derive(Debug, Clone)]
-    pub struct Documents<'b> {
-        pub root: &'b PathBuf,
+    pub struct Documents {
+        pub root: PathBuf,
         pub reports: Box<[PathBuf]>,
         pub templates: Box<[PathBuf]>,
         pub resources: Box<[PathBuf]>,
     }
-    impl<'b> Documents<'b> {
-        pub fn new(root: &'b PathBuf) -> Result<Self> {
+    impl Documents {
+        pub fn new(path: &PathBuf) -> Result<Self> {
+            let root = path.canonicalize()?;
             let reports = read_dir(root.join("Reports"))?
                 .filter_map( |entry| entry.ok())
                 .map( |entry| entry.path())
@@ -42,7 +44,7 @@ pub mod nomming {
                 .filter_map( |entry| entry.ok())
                 .map( |entry| entry.path())
                 .collect();
-            let resources = read_dir(root.join("resources"))?
+            let resources = read_dir(root.join("Resources"))?
                 .filter_map( |entry| entry.ok())
                 .map( |entry| entry.path())
                 .collect();
@@ -82,8 +84,7 @@ pub mod nomming {
             let reports_index = self
                 .index_part_headers(json!("rep"))
                 .ok_or(anyhow!("\"rep\" header not found"))?;
-            let mut listed_reports = self
-                .partdata
+            let mut listed_reports = self.partdata
                 .iter()
                 .filter( |&(key, value)| key != "headers" )
                 .filter_map( |(key, value)| value.as_array() )
@@ -109,6 +110,45 @@ pub mod nomming {
         sort_by_row: &'b str,
         pattern_row: &'b str,
     }
+    #[derive(Debug, Clone)]
+    enum Block {
+        Tr(&'static str),
+        Td(&'static str),
+        Th(&'static str),
+        Thead(&'static str),
+        Tfoot(&'static str),
+        Table(&'static str),
+    }
+    impl<'b> Block {
+        fn open_tag(&self) -> String {
+            match self {
+                Self::Th(class) => format!("<th class=\"{class}\">"),
+                Self::Tr(class) => format!("<tr class=\"{class}\">"),
+                Self::Td(class) => format!("<td class=\"{class}\">"),
+                Self::Table(class) => format!("<table class=\"{class}\">"),
+                Self::Thead(class) => format!("<thead class=\"{class}\">"),
+                Self::Tfoot(class) => format!("<tfoot class=\"{class}\">"),
+            }
+        }
+        fn close_tag(&self) -> &'static str {
+            match self {
+                Self::Th(_) => "</th>",
+                Self::Tr(_) => "</tr>",
+                Self::Td(_) => "</td>",
+                Self::Table(_) => "</table>",
+                Self::Thead(_) => "</thead>",
+                Self::Tfoot(_) => "</tfoot>",
+            }
+        }
+        fn parse(&self, s: &'b str) -> IResult<&'b str, &'b str> {
+            preceded(
+                take_until(self.open_tag().as_str()),
+                recognize(
+                    take_until(self.close_tag())
+                    ),
+                    )(s)
+        }
+    }
     impl<'b> Template<'b> {
         pub fn new(s: &'b str) -> IResult<&str, Self> {
             let (_, body) = Self::body(s)?;
@@ -122,6 +162,24 @@ pub mod nomming {
                 pattern_row,
             }))
         }
+        fn title_block(s: &str) -> IResult<&str, &str> {
+            Block::Table("title_block").parse(s)
+        }
+        fn data_block(s: &str) -> IResult<&str, &str> {
+            Block::Table("data_block").parse(s)
+        }
+        fn sort_by_row(s: &str) -> IResult<&str, &str> {
+            Block::Tr("sort_by_row").parse(s)
+        }
+        fn pattern_row(s: &str) -> IResult<&str, &str> {
+            Block::Tr("pattern_row").parse(s)
+        }
+        fn body(s: &str) -> IResult<&str, &str> {
+            preceded(
+                take_until("<body>"),
+                recognize( take_until("</body>") ),
+                )(s)
+        }
         fn blocks(s: &str) -> IResult<&str, (&str, &str)> {
             tuple((
                     Self::title_block,
@@ -134,64 +192,19 @@ pub mod nomming {
                     Self::pattern_row,
                     ))(s)
         }
-        fn body(s: &str) -> IResult<&str, &str> {
-            preceded(
-                pair(
-                    take_until("<body>"),
-                    tag("<body>")
-                    ),
-                    take_until("</body>")
-                    )(s)
-        }
-        fn title_block(s: &str) -> IResult<&str, &str> {
-            preceded(
-                pair(
-                    take_until("<table class=\"title_block\">"),
-                    tag("<table class=\"title_block\">")
-                    ),
-                    take_until("</table>")
-                    )(s)
-        }
-        fn data_block(s: &str) -> IResult<&str, &str> {
-            preceded(
-                pair(
-                    take_until("<table class=\"data_block\">"),
-                    tag("<table class=\"data_block\">")
-                    ),
-                    take_until("</table>")
-                    )(s)
-        }
-        fn sort_by_row(s: &str) -> IResult<&str, &str> {
-            preceded(
-                pair(
-                    take_until("<tr class=\"sort_by_row\">"),
-                    tag("<tr class=\"sort_by_row\">")
-                    ),
-                    take_until("</tr>")
-                    )(s)
-        }
-        fn pattern_row(s: &str) -> IResult<&str, &str> {
-            preceded(
-                pair(
-                    take_until("<tr class=\"pattern_row\">"),
-                    tag("<tr class=\"pattern_row\">")
-                    ),
-                    take_until("</tr>")
-                    )(s)
-        }
     }
 
 
 
     #[derive(Debug, Clone)]
-    pub struct FileDispatch<'b> {
+    pub struct Dispatch<'b> {
         buffer: &'b Buffer,
-        documents: &'b Documents<'b>,
+        documents: &'b Documents,
         log: Option<PathBuf>,
     }
-    impl<'b> FileDispatch<'b> {
+    impl<'b> Dispatch<'b> {
         pub fn new(buffer: &'b Buffer, documents: &'b Documents) -> Self {
-            let log= None;
+            let log = None;
             Self{buffer, documents, log}
         }
         pub fn log(&self, log: PathBuf) -> Self {
@@ -199,12 +212,12 @@ pub mod nomming {
             let log = Some(log);
             Self{buffer, documents, log}
         }
-        pub fn dispatch(&self) -> Result<Box<[String]>> {
-            let templates = self
-                .buffer
-                .list_all_reports()?
-                .iter()
-                .filter_map( |&stem| self.documents.check_template(stem))
+        pub fn read_all(&self) -> Result<Box<[String]>> {
+            let templates = self 
+                .buffer 
+                .list_all_reports()? 
+                .iter() 
+                .filter_map( |&stem| self.documents.check_template(stem)) 
                 .inspect( |path| self.dispatch_log(path))
                 .par_bridge()
                 .filter_map( |path| read_to_string(path).ok())
@@ -213,14 +226,15 @@ pub mod nomming {
         }
         fn dispatch_log(&self, template: &PathBuf) {
             if let Some(log) = &self.log {
-                println!("template found: {template:#?}");
+                println!("{template:#?}");
                 OpenOptions::new()
                     .append(true)
                     .create(true)
                     .open(log)
-                    .expect("failed to execute logging");
+                    .expect("failed to open log")
+                    .write(format!("{template:#?}\n").as_bytes())
+                    .expect("failed to write to log");
             }
         }
     }
 }
-
