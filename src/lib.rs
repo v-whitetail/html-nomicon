@@ -4,33 +4,20 @@ pub mod cli;
 
 pub mod nomming {
 
+    use serde::{Serialize, Deserialize};
+    use anyhow::{ Result, anyhow, bail, };
+    use serde_json::{Map, Value, json};
+
     use std::{
+        sync::Arc,
         path::PathBuf,
-        fs::{
-            ReadDir,
-            read_dir,
-        },
+        fs::{ ReadDir, read_dir, },
     };
     use nom::{
         IResult,
-        sequence::{
-            pair,
-            tuple,
-            preceded,
-        },
-        bytes::complete::{
-            tag,
-            take_until,
-        },
+        sequence::{ pair, tuple, preceded, },
+        bytes::complete::{ tag, take_until, },
     };
-    use anyhow::{
-        Result,
-        anyhow,
-        bail,
-    };
-    use thiserror::Error;
-    use serde::{Serialize, Deserialize};
-    use serde_json::{Map, Value, json};
 
 
 
@@ -38,14 +25,14 @@ pub mod nomming {
 
     #[derive(Debug)]
     pub struct Documents {
-        templates: ReadDir,
         reports: ReadDir,
+        templates: ReadDir,
         resources: ReadDir,
     }
     impl Documents {
         fn new(path: &PathBuf) -> Result<Self> {
-            let templates = read_dir(path.join("Templates"))?;
             let reports = read_dir(path.join("Reports"))?;
+            let templates = read_dir(path.join("Templates"))?;
             let resources = read_dir(path.join("resources"))?;
             Ok(Self{templates, reports, resources})
         }
@@ -74,7 +61,7 @@ pub mod nomming {
             let mut listed_reports = self
                 .partdata
                 .iter()
-                .filter(|&(key, value)| key != "headers")
+                .filter( |&(key, value)| key != "headers" )
                 .filter_map( |(key, value)| value.as_array() )
                 .filter_map( |entries| entries.get(reports_index) )
                 .filter_map( |reports| reports.as_array() )
@@ -98,7 +85,12 @@ pub mod nomming {
         sort_by_row: &'t str,
         pattern_row: &'t str,
     }
-    impl<'t> Template<'t> {
+    type BatchInput<'b, 'd> = (&'b Buffer, &'d Documents);
+    type BatchResult<'t> = IResult<&'t str, Arc<[Template<'t>]>>;
+    impl<'t, 'b: 't, 'd: 'b> Template<'t> {
+        pub fn new_batch(input: BatchInput) -> BatchResult<'t> {
+            todo!()
+        }
         pub fn new(s: &'t str) -> IResult<&str, Self> {
             let (_, body) = Self::body(s)?;
             let (_, (title_block, data_block)) = Self::blocks(s)?;
@@ -172,14 +164,20 @@ pub mod nomming {
 
 
 
-    pub struct BatchProcessor {
+    pub struct BatchProcessor<'t> {
         buffer: Buffer,
         documents: Documents,
+        templates: Arc<[Template<'t>]>,
     }
-    impl BatchProcessor {
+    impl<'t> BatchProcessor<'t> {
         pub fn new(buffer: Buffer, path: &PathBuf) -> Result<Self> {
             let documents = Documents::new(path)?;
-            Ok(Self{buffer, documents})
+            let templates = Arc::new([]);
+            let foo = buffer.list_all_reports()?;
+            Ok(Self{buffer, documents, templates})
+        }
+        pub fn build(&self) -> Result<()> {
+            Ok(())
         }
     }
 }
