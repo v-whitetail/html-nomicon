@@ -4,14 +4,16 @@ pub mod cli;
 
 pub mod nomming {
 
-    use serde::{Serialize, Deserialize};
+    use serde::{ Serialize, Deserialize, };
     use anyhow::{ Result, anyhow, bail, };
-    use serde_json::{Map, Value, json};
+    use serde_json::{ Map, Value, json, };
+    use rayon::prelude::*;
 
     use std::{
+        cmp::max,
         sync::Arc,
         path::PathBuf,
-        fs::{ ReadDir, read_dir, },
+        fs::{ File, ReadDir, read_dir, read_to_string, },
     };
     use nom::{
         IResult,
@@ -23,18 +25,40 @@ pub mod nomming {
 
 
 
-    #[derive(Debug)]
-    pub struct Documents {
-        reports: ReadDir,
-        templates: ReadDir,
-        resources: ReadDir,
+    #[derive(Debug, Clone)]
+    pub struct Documents<'b> {
+        pub root: &'b PathBuf,
+        pub reports: Box<[PathBuf]>,
+        pub templates: Box<[PathBuf]>,
+        pub resources: Box<[PathBuf]>,
     }
-    impl Documents {
-        fn new(path: &PathBuf) -> Result<Self> {
-            let reports = read_dir(path.join("Reports"))?;
-            let templates = read_dir(path.join("Templates"))?;
-            let resources = read_dir(path.join("resources"))?;
-            Ok(Self{templates, reports, resources})
+    impl<'b> Documents<'b> {
+        fn new(root: &'b PathBuf) -> Result<Self> {
+            let reports = read_dir(root.join("Reports"))?
+                .filter_map( |entry| entry.ok())
+                .map( |entry| entry.path())
+                .collect();
+            let templates = read_dir(root.join("Templates"))?
+                .filter_map( |entry| entry.ok())
+                .map( |entry| entry.path())
+                .collect();
+            let resources = read_dir(root.join("resources"))?
+                .filter_map( |entry| entry.ok())
+                .map( |entry| entry.path())
+                .collect();
+            Ok(Self{root, templates, reports, resources})
+        }
+        fn check_template(&self, stem: &str) -> Option<PathBuf> {
+            let template_path = self.root
+                .join("Templates")
+                .join(stem)
+                .with_extension("html");
+            let is_present = self.templates
+                .into_iter()
+                .fold(false, |is_present, path|
+                      max(template_path == *path, is_present));
+            if is_present { return Some(template_path)}
+            else { return None }
         }
     }
 
@@ -78,20 +102,15 @@ pub mod nomming {
 
 
     #[derive(Debug, Clone)]
-    pub struct Template<'t> {
-        body: &'t str,
-        title_block: &'t str,
-        data_block: &'t str,
-        sort_by_row: &'t str,
-        pattern_row: &'t str,
+    pub struct Template<'b> {
+        body: &'b str,
+        title_block: &'b str,
+        data_block: &'b str,
+        sort_by_row: &'b str,
+        pattern_row: &'b str,
     }
-    type BatchInput<'b, 'd> = (&'b Buffer, &'d Documents);
-    type BatchResult<'t> = IResult<&'t str, Arc<[Template<'t>]>>;
-    impl<'t, 'b: 't, 'd: 'b> Template<'t> {
-        pub fn new_batch(input: BatchInput) -> BatchResult<'t> {
-            todo!()
-        }
-        pub fn new(s: &'t str) -> IResult<&str, Self> {
+    impl<'b> Template<'b> {
+        pub fn new(s: &'b str) -> IResult<&str, Self> {
             let (_, body) = Self::body(s)?;
             let (_, (title_block, data_block)) = Self::blocks(s)?;
             let (_, (sort_by_row, pattern_row)) = Self::rows(s)?;
@@ -164,20 +183,25 @@ pub mod nomming {
 
 
 
-    pub struct BatchProcessor<'t> {
-        buffer: Buffer,
-        documents: Documents,
-        templates: Arc<[Template<'t>]>,
+    #[derive(Debug, Clone)]
+    pub struct FileDispatch<'b> {
+        buffer: &'b Buffer,
+        documents: &'b Documents<'b>,
     }
-    impl<'t> BatchProcessor<'t> {
-        pub fn new(buffer: Buffer, path: &PathBuf) -> Result<Self> {
-            let documents = Documents::new(path)?;
-            let templates = Arc::new([]);
-            let foo = buffer.list_all_reports()?;
-            Ok(Self{buffer, documents, templates})
+    impl<'b> FileDispatch<'b> {
+        pub fn new(buffer: &'b Buffer, documents: &'b Documents) -> Self {
+            Self{buffer, documents}
         }
-        pub fn build(&self) -> Result<()> {
-            Ok(())
+        pub fn dispatch(&self) -> Result<Box<[String]>> {
+            let templates = self
+                .buffer
+                .list_all_reports()?
+                .iter()
+                .filter_map( |&stem| self.documents.check_template(stem))
+                .par_bridge()
+                .filter_map( |path| read_to_string(path).ok())
+                .collect();
+            Ok(templates)
         }
     }
 }
