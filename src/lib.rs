@@ -210,15 +210,28 @@ pub mod nomming {
         Parsed(Box<[Template<'b>]>),
     }
     impl<'b> TemplateBatch<'b> {
-        fn process(&'b self) -> Self {
+        fn process(&'b self, log: &Option<PathBuf>) -> Self {
             if let Self::Raw(batch) = self {
                 Self::Parsed(
                     batch 
                     .par_iter()
                     .filter_map( |template| Template::new(template).ok())
                     .map( |(input, output)| output)
+                    .inspect( |template| Self::log(template, &log) )
                     .collect())
             } else { self.clone() }
+        }
+        fn log(template: &Template, log: &Option<PathBuf>) {
+            if let Some(path) = log {
+                println!("{template:#?}");
+                OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open(path)
+                    .expect("failed to open log")
+                    .write(format!("{template:#?}\n").as_bytes())
+                    .expect("failed to write to log");
+            }
         }
     }
     #[derive(Debug, Clone)]
@@ -246,7 +259,6 @@ pub mod nomming {
                 .list_all_reports()? 
                 .iter() 
                 .filter_map( |&stem| self.documents.check_template(stem)) 
-                .inspect( |path| self.log(path))
                 .par_bridge()
                 .filter_map( |path| read_to_string(path).ok())
                 .collect()
@@ -255,20 +267,8 @@ pub mod nomming {
         }
         pub fn parse_all(&'b self) -> Self {
             let mut new = self.clone();
-            new.parsed_batch = self.raw_batch.process();
+            new.parsed_batch = self.raw_batch.process(&self.log);
             new
-        }
-        fn log(&self, template: &PathBuf) {
-            if let Some(log) = &self.log {
-                println!("{template:#?}");
-                OpenOptions::new()
-                    .append(true)
-                    .create(true)
-                    .open(log)
-                    .expect("failed to open log")
-                    .write(format!("{template:#?}\n").as_bytes())
-                    .expect("failed to write to log");
-            }
         }
     }
 }
