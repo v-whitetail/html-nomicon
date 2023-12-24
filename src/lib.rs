@@ -13,7 +13,7 @@ pub mod nomming {
         cmp::max,
         sync::Arc,
         path::PathBuf,
-        fs::{ File, ReadDir, read_dir, read_to_string, },
+        fs::{ File, ReadDir, OpenOptions, read_dir, read_to_string, },
     };
     use nom::{
         IResult,
@@ -33,7 +33,7 @@ pub mod nomming {
         pub resources: Box<[PathBuf]>,
     }
     impl<'b> Documents<'b> {
-        fn new(root: &'b PathBuf) -> Result<Self> {
+        pub fn new(root: &'b PathBuf) -> Result<Self> {
             let reports = read_dir(root.join("Reports"))?
                 .filter_map( |entry| entry.ok())
                 .map( |entry| entry.path())
@@ -187,10 +187,17 @@ pub mod nomming {
     pub struct FileDispatch<'b> {
         buffer: &'b Buffer,
         documents: &'b Documents<'b>,
+        log: Option<PathBuf>,
     }
     impl<'b> FileDispatch<'b> {
         pub fn new(buffer: &'b Buffer, documents: &'b Documents) -> Self {
-            Self{buffer, documents}
+            let log= None;
+            Self{buffer, documents, log}
+        }
+        pub fn log(&self, log: PathBuf) -> Self {
+            let (buffer, documents) = (self.buffer, self.documents);
+            let log = Some(log);
+            Self{buffer, documents, log}
         }
         pub fn dispatch(&self) -> Result<Box<[String]>> {
             let templates = self
@@ -198,10 +205,21 @@ pub mod nomming {
                 .list_all_reports()?
                 .iter()
                 .filter_map( |&stem| self.documents.check_template(stem))
+                .inspect( |path| self.dispatch_log(path))
                 .par_bridge()
                 .filter_map( |path| read_to_string(path).ok())
                 .collect();
             Ok(templates)
+        }
+        fn dispatch_log(&self, template: &PathBuf) {
+            if let Some(log) = &self.log {
+                println!("template found: {template:#?}");
+                OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open(log)
+                    .expect("failed to execute logging");
+            }
         }
     }
 }
