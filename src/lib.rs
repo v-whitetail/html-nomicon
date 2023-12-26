@@ -8,18 +8,18 @@ pub mod nomming {
     use anyhow::{ anyhow, Result, };
     use serde::{ Serialize, Deserialize, };
     use serde_json::{ json, Map, Value, };
-
+    use nom::{
+        IResult,
+        combinator::recognize,
+        sequence::{ pair, preceded, },
+        bytes::complete::{ tag, take_until, },
+    };
     use std::{
         cmp::max,
         io::Write,
         path::PathBuf,
+        borrow::Cow,
         fs::{ OpenOptions, read_dir, read_to_string, canonicalize, },
-    };
-    use nom::{
-        IResult,
-        combinator::recognize,
-        sequence::{ pair, tuple, preceded, },
-        bytes::complete::{ tag, take_until, },
     };
 
 
@@ -38,16 +38,16 @@ pub mod nomming {
         pub fn new(path: &PathBuf) -> Result<Self> {
             let root = path.canonicalize()?;
             let reports = read_dir(root.join("Reports"))?
-                .filter_map( |entry| entry.ok())
-                .map( |entry| entry.path())
+                .filter_map( |entry| entry.ok() )
+                .map( |entry| entry.path() )
                 .collect();
             let templates = read_dir(root.join("Templates"))?
-                .filter_map( |entry| entry.ok())
-                .map( |entry| entry.path())
+                .filter_map( |entry| entry.ok() )
+                .map( |entry| entry.path() )
                 .collect();
             let resources = read_dir(root.join("Resources"))?
-                .filter_map( |entry| entry.ok())
-                .map( |entry| entry.path())
+                .filter_map( |entry| entry.ok() )
+                .map( |entry| entry.path() )
                 .collect();
             Ok(Self{root, templates, reports, resources})
         }
@@ -82,6 +82,15 @@ pub mod nomming {
                 headers.iter().position(|v| *v == value)
             } else { None }
         }
+        pub fn list_all_headers(&self) -> Box<[&str]> {
+            self.partdata
+                .iter()
+                .filter( |&(key, value)| key == "headers" )
+                .filter_map( |(key, value)| value.as_array() )
+                .flatten()
+                .filter_map( |header| header.as_str() )
+                .collect()
+        }
         pub fn list_all_reports(&self) -> Result<Vec<&str>> {
             let reports_index = self
                 .index_part_headers(json!("rep"))
@@ -106,15 +115,8 @@ pub mod nomming {
 
 
     #[derive(Debug, Clone)]
-    pub struct Template<'b> {
-        body: &'b str,
-        title_block: &'b str,
-        data_block: &'b str,
-        sort_by_row: &'b str,
-        pattern_row: &'b str,
-    }
-    #[derive(Debug, Clone)]
     enum Block {
+        Body,
         Tr(&'static str),
         Td(&'static str),
         Th(&'static str),
@@ -123,18 +125,20 @@ pub mod nomming {
         Table(&'static str),
     }
     impl<'b> Block {
-        fn open_tag(&self) -> String {
+        fn open_tag(&self) -> Cow<str> {
             match self {
+                Self::Body => format!("<body>"),
                 Self::Th(class) => format!("<th class=\"{class}\""),
                 Self::Tr(class) => format!("<tr class=\"{class}\""),
                 Self::Td(class) => format!("<td class=\"{class}\""),
                 Self::Table(class) => format!("<table class=\"{class}\""),
                 Self::Thead(class) => format!("<thead class=\"{class}\""),
                 Self::Tfoot(class) => format!("<tfoot class=\"{class}\""),
-            }
+            }.into()
         }
         fn close_tag(&self) -> &'static str {
             match self {
+                Self::Body => "</body>",
                 Self::Th(_) => "</th>",
                 Self::Tr(_) => "</tr>",
                 Self::Td(_) => "</td>",
@@ -144,33 +148,29 @@ pub mod nomming {
             }
         }
         fn parse(&self, s: &'b str) -> IResult<&'b str, &'b str> {
+            let take_once = |t| recognize(pair(take_until(t),tag(t)));
             preceded(
-                take_until(self.open_tag().as_str()),
-                recognize(pair(
-                    take_until(self.close_tag()),
-                    tag(self.close_tag()),
-                    )),
-                    )(s)
+                take_until(&*self.open_tag()),
+                take_once(self.close_tag()),
+                )(s)
         }
     }
+
+
+
+
+
+    #[derive(Debug, Clone)]
+    pub struct Template<'b> {
+        body: &'b str,
+        title_block: &'b str,
+        data_block: &'b str,
+        sorting_row: &'b str,
+        pattern_row: &'b str,
+    }
     impl<'b> Template<'b> {
-        pub fn new(s: &'b str) -> IResult<&str, Self> {
-            let (_, body) = Self::body(s)?;
-            let (_, (title_block, data_block)) = Self::blocks(s)?;
-            let (_, (sort_by_row, pattern_row)) = Self::rows(s)?;
-            Ok((s, Self{
-                body,
-                title_block,
-                data_block,
-                sort_by_row,
-                pattern_row,
-            }))
-        }
-        pub fn sort_by_row(s: &str) -> IResult<&str, &str> {
-            Block::Tr("sort_by_row").parse(s)
-        }
-        pub fn pattern_row(s: &str) -> IResult<&str, &str> {
-            Block::Tr("pattern_row").parse(s)
+        pub fn body(s: &str) -> IResult<&str, &str> {
+            Block::Body.parse(s)
         }
         pub fn title_block(s: &str) -> IResult<&str, &str> {
             Block::Table("title_block").parse(s)
@@ -178,23 +178,53 @@ pub mod nomming {
         pub fn data_block(s: &str) -> IResult<&str, &str> {
             Block::Table("data_block").parse(s)
         }
-        pub fn body(s: &str) -> IResult<&str, &str> {
-            preceded(
-                take_until("<body>"),
-                recognize(pair( take_until("</body>"), tag("</body>"))),
-                )(s)
+        pub fn sorting_row(s: &str) -> IResult<&str, &str> {
+            Block::Tr("sorting_row").parse(s)
+        }
+        pub fn pattern_row(s: &str) -> IResult<&str, &str> {
+            Block::Tr("pattern_row").parse(s)
         }
         pub fn blocks(s: &str) -> IResult<&str, (&str, &str)> {
-            tuple((
-                    Self::title_block,
-                    Self::data_block,
-                    ))(s)
+            pair( Self::title_block, Self::data_block )(s)
         }
         pub fn rows(s: &str) -> IResult<&str, (&str, &str)> {
-            tuple((
-                    Self::sort_by_row,
-                    Self::pattern_row,
-                    ))(s)
+            pair( Self::sorting_row, Self::pattern_row )(s)
+        }
+        pub fn new(s: &'b str) -> IResult<&str, Self> {
+            let (_, body) = Self::body(s)?;
+            let (_, (title_block, data_block)) = Self::blocks(s)?;
+            let (_, (sorting_row, pattern_row)) = Self::rows(s)?;
+            Ok((s, Self{
+                body,
+                data_block,
+                title_block,
+                sorting_row,
+                pattern_row,
+            }))
+        }
+        pub fn populate(&self, raw: &String, buffer: &'b Buffer) -> String {
+            let raw = raw.to_owned();
+            let title_block = self.title_block.to_owned();
+            let sorting_row = self.sorting_row.to_owned();
+            let pattern_row = self.pattern_row.to_owned();
+            buffer.projdata.iter()
+                .chain( buffer.userdata.iter() )
+                .filter_map(
+                    |(key, value)| value.as_str().and_then(
+                        |value| Some((key, value)))
+                    )
+                .for_each( |(key, value)| {
+                    title_block.replace(key, value);
+                });
+            let (sort_criteria, pattern_criteria):
+                (Vec<&str>, Vec<&str>) = buffer
+                 .list_all_headers()
+                 .into_iter()
+                 .partition( |&&header| self.sorting_row.contains(header) );
+
+
+            raw.replace( self.title_block, &title_block );
+            todo!()
         }
     }
 
@@ -202,73 +232,41 @@ pub mod nomming {
 
 
 
-
-    #[derive(Debug, Clone)]
-    enum TemplateBatch<'b> {
-        Empty,
-        Raw(Box<[String]>),
-        Parsed(Box<[Template<'b>]>),
+    pub struct RawTemplates<'b>{
+        listed_reports: Vec<&'b str>,
+        templates: Box<[String]>,
     }
-    impl<'b> TemplateBatch<'b> {
-        fn process(&'b self, log: &Option<PathBuf>) -> Self {
-            if let Self::Raw(batch) = self {
-                Self::Parsed(
-                    batch 
-                    .par_iter()
-                    .filter_map( |template| Template::new(template).ok())
-                    .map( |(input, output)| output)
-                    .inspect( |template| Self::log(template, &log) )
-                    .collect())
-            } else { self.clone() }
-        }
-        fn log(template: &Template, log: &Option<PathBuf>) {
-            if let Some(path) = log {
-                println!("{template:#?}");
-                OpenOptions::new()
-                    .append(true)
-                    .create(true)
-                    .open(path)
-                    .expect("failed to open log")
-                    .write(format!("{template:#?}\n").as_bytes())
-                    .expect("failed to write to log");
-            }
-        }
-    }
-    #[derive(Debug, Clone)]
-    pub struct Dispatch<'b> {
-        buffer: &'b Buffer,
-        documents: &'b Documents,
-        log: Option<PathBuf>,
-        raw_batch: TemplateBatch<'b>,
-        parsed_batch: TemplateBatch<'b>,
-    }
-    impl<'b> Dispatch<'b> {
-        pub fn new(buffer: &'b Buffer, documents: &'b Documents) -> Self {
-            let log = None;
-            let raw_batch = TemplateBatch::Empty;
-            let parsed_batch = TemplateBatch::Empty;
-            Self{buffer, documents, raw_batch, parsed_batch, log}
-        }
-        pub fn with_log(mut self, log: PathBuf) -> Self {
-            self.log = Some(log);
-            return self
-        }
-        pub fn read_all(&'b mut self) -> Result<&Self> {
-            self.raw_batch = TemplateBatch::Raw(
-                self.buffer 
-                .list_all_reports()? 
+    impl<'b> RawTemplates<'b> {
+        pub fn new(buffer: &'b Buffer, documents: &Documents) -> Result<Self> {
+            let listed_reports = buffer.list_all_reports()?;
+            let templates = listed_reports
                 .iter() 
-                .filter_map( |&stem| self.documents.check_template(stem)) 
+                .filter_map( |&stem| documents.check_template(stem) )
                 .par_bridge()
-                .filter_map( |path| read_to_string(path).ok())
-                .collect()
-                );
-            Ok(self)
+                .filter_map( |path| read_to_string(path).ok() )
+                .collect();
+            Ok(Self{listed_reports, templates})
         }
-        pub fn parse_all(&'b self) -> Self {
-            let mut new = self.clone();
-            new.parsed_batch = self.raw_batch.process(&self.log);
-            new
-        }
+    }
+
+
+
+
+
+    pub struct ParsedTemplates<'b>{
+        buffer: &'b Buffer,
+        templates: Box<[Template<'b>]>,
+    }
+    impl<'b> ParsedTemplates<'b> {
+        pub fn new(buffer: &'b Buffer, raw_templates: &'b RawTemplates<'b>)
+            -> Result<Self> {
+                let templates = raw_templates
+                    .templates
+                    .par_iter()
+                    .filter_map( |template| Template::new(template).ok() )
+                    .map( |(input, output)| output )
+                    .collect();
+                Ok(Self{buffer, templates})
+            }
     }
 }
