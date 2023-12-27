@@ -1,6 +1,6 @@
 use anyhow::Result;
 use html_nomicon::cli::*;
-use html_nomicon::nomming::*;
+use html_nomicon::processing::*;
 
 fn main() -> Result<()> {
 
@@ -10,7 +10,7 @@ fn main() -> Result<()> {
 
     let raw_templates = RawTemplates::new(&input.json, &documents)?;
 
-    let parsed_templates = ParsedTemplates::new(&raw_templates)?;
+    let parsed_templates = ParsedTemplates::new(&input.json, &raw_templates)?;
 
     Ok(())
 
