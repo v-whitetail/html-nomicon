@@ -1,13 +1,16 @@
 use nom::{
     IResult,
+    multi::separated_list0,
     branch::alt,
     sequence::{ pair, preceded, terminated, delimited, },
-    combinator::{ opt, rest, peek, recognize, map_parser, },
+    combinator::{ map, opt, rest, peek, recognize, map_parser, iterator, },
     bytes::complete::{ tag, take_until, },
+    character::complete::multispace0,
 };
 
 
 const TR: &'static str = "tr";
+const TD: &'static str = "td";
 const BODY: &'static str = "body";
 const TABLE: &'static str = "table";
 const DATA_BLOCK: &'static str = "data_block";
@@ -125,6 +128,15 @@ fn element<'s>(e:&'s str) -> impl Fn(&'s str) -> FResult<'s> {
 }
 fn variable<'s>(v: &'s str) -> impl Fn(&'s str) -> FResult<'s> {
     move |s| recognize(pair(tag(PREFIX), tag(v)))(s)
+}
+fn delimit_data_row() -> impl Fn(&'static str) -> FResult<'static> {
+    move |s| take_with_tag3((CLOSE.0, TD, CLOSE.1))(s)
+}
+fn variable_cell<'s>(v: &'s str) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| preceded(take_until(PREFIX), variable(v))(s)
+}
+fn variable_element<'s>(v:&'s str) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| map_parser(element(TD), variable_cell(v))(s)
 }
 fn tag_class<'s>(e:&'s str, c:&'s str) -> impl Fn(&'s str) -> FResult<'s> {
     move |s| map_parser(element(e), trim_until_tag4((OPEN, e, CLASS, c)))(s)

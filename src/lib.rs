@@ -74,8 +74,8 @@ pub mod processing {
         pub fn list_all_headers(&self) -> Box<[&str]> {
             self.partdata
                 .iter()
-                .filter( |&(key, value)| key == "headers" )
-                .filter_map( |(key, value)| value.as_array() )
+                .filter( |&(key, _value)| key == "headers" )
+                .filter_map( |(_key, value)| value.as_array() )
                 .flatten()
                 .filter_map( |header| header.as_str() )
                 .collect()
@@ -130,6 +130,17 @@ pub mod processing {
                 sorting_row,
                 pattern_row,
             }))
+        }
+    }
+    #[derive(Debug, Clone)]
+    pub struct DataRow<'b> {
+        raw: &'b str,
+        variables: Vec<&'b str>,
+    }
+    impl<'b> DataRow<'b> {
+        pub fn new(raw: &'b str, buffer: &'b Buffer) -> IResult<&'b str, Self> {
+            let variables = todo!();
+            Ok((raw, Self{raw, variables}))
         }
     }
 
