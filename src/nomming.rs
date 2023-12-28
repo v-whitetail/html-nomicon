@@ -26,8 +26,11 @@ pub fn body(s: &str) -> IResult<&str, &str> {
 pub fn data_block(s: &str) -> IResult<&str, &str> {
     class_element(TABLE, DATA_BLOCK)(s)
 }
-pub fn title_block(s: &str) -> IResult<&str, Option<&str>> {
-    opt(class_element(TABLE, TITLE_BLOCK))(s)
+pub fn title_block(s: &str) -> IResult<&str, &str> {
+    class_element(TABLE, TITLE_BLOCK)(s)
+}
+pub fn blocks(s: &str) -> IResult<&str, (&str, &str)> {
+    pair(title_block, data_block)(s)
 }
 pub fn sorting_row(s: &str) -> IResult<&str, Option<&str>> {
     opt(class_element(TR, SORTING_ROW))(s)
@@ -38,23 +41,23 @@ pub fn pattern_row(s: &str) -> IResult<&str, Option<&str>> {
 pub fn rows(s: &str) -> IResult<&str, (Option<&str>, Option<&str>)> {
     pair(sorting_row, pattern_row)(s)
 }
-pub fn blocks(s: &str) -> IResult<&str, (Option<&str>, &str)> {
-    pair(title_block, data_block)(s)
-}
-
-
-
 
 
 type Tag1<'s> = (&'s str);
 type Tag2<'s> = (&'s str, &'s str);
 type Tag3<'s> = (&'s str, &'s str, &'s str);
+type Tag4<'s> = (&'s str, &'s str, &'s str, &'s str);
 type FResult<'s> = IResult<&'s str, &'s str>;
+
+
 fn tag2<'s>(t: Tag2<'s>) -> impl Fn(&'s str) -> FResult<'s> {
     move |s| recognize(pair(tag(t.0), tag(t.1)))(s)
 }
 fn tag3<'s>(t: Tag3<'s>) -> impl Fn(&'s str) -> FResult<'s> {
     move |s| recognize(pair(tag(t.0), tag2((t.1, t.2))))(s)
+}
+fn tag4<'s>(t: Tag4<'s>) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| recognize(pair(tag(t.0), tag3((t.1, t.2, t.3))))(s)
 }
 fn skip_to_tag<'s>(t: Tag1<'s>) -> impl Fn(&'s str) -> FResult<'s> {
     move |s| preceded(take_until(t), peek(tag(t)))(s)
@@ -71,6 +74,12 @@ fn skip_to_tag3<'s>(t: Tag3<'s>) -> impl Fn(&'s str) -> FResult<'s> {
             preceded(take_with_tag(t.0), skip_to_tag3(t)),
             ))(s)
 }
+fn skip_to_tag4<'s>(t: Tag4<'s>) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| alt((
+            preceded(take_until(t.0), peek(tag4(t))),
+            preceded(take_with_tag(t.0), skip_to_tag4(t)),
+            ))(s)
+}
 fn take_with_tag<'s>(t: Tag1<'s>) -> impl Fn(&'s str) -> FResult<'s> {
     move |s| recognize(pair(skip_to_tag(t), tag(t)))(s)
 }
@@ -80,6 +89,9 @@ fn take_with_tag2<'s>(t: Tag2<'s>) -> impl Fn(&'s str) -> FResult<'s> {
 fn take_with_tag3<'s>(t: Tag3<'s>) -> impl Fn(&'s str) -> FResult<'s> {
     move |s| recognize(pair(skip_to_tag3(t), tag3(t)))(s)
 }
+fn take_with_tag4<'s>(t: Tag4<'s>) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| recognize(pair(skip_to_tag4(t), tag4(t)))(s)
+}
 fn trim_until_tag<'s>(t: Tag1<'s>) -> impl Fn(&'s str) -> FResult<'s> {
     move |s| preceded(skip_to_tag(t), rest)(s)
 }
@@ -88,6 +100,9 @@ fn trim_until_tag2<'s>(t: Tag2<'s>) -> impl Fn(&'s str) -> FResult<'s> {
 }
 fn trim_until_tag3<'s>(t: Tag3<'s>) -> impl Fn(&'s str) -> FResult<'s> {
     move |s| preceded(skip_to_tag3(t), rest)(s)
+}
+fn trim_until_tag4<'s>(t: Tag4<'s>) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| preceded(skip_to_tag4(t), rest)(s)
 }
 
 
@@ -112,7 +127,7 @@ fn variable<'s>(v: &'s str) -> impl Fn(&'s str) -> FResult<'s> {
     move |s| recognize(pair(tag(PREFIX), tag(v)))(s)
 }
 fn tag_class<'s>(e:&'s str, c:&'s str) -> impl Fn(&'s str) -> FResult<'s> {
-    move |s| map_parser(element(e), tag3((OPEN, e, c)))(s)
+    move |s| map_parser(element(e), trim_until_tag4((OPEN, e, CLASS, c)))(s)
 }
 fn class_element<'s>(e:&'s str, c:&'s str) -> impl Fn(&'s str) -> FResult<'s> {
     move |s| alt((

@@ -114,21 +114,15 @@ pub mod processing {
     pub struct Template<'b> {
         body: &'b str,
         data_block: &'b str,
-        title_block: Option<&'b str>,
+        title_block: &'b str,
         sorting_row: Option<&'b str>,
         pattern_row: Option<&'b str>,
     }
     impl<'b> Template<'b> {
         pub fn new(s: &'b str) -> IResult<&str, Self> {
-            //dbg!(body(s));
             let (_, body) = body(s)?;
-            dbg!(&body);
             let (_, (title_block, data_block)) = blocks(body)?;
-            //dbg!(&title_block);
-            //dbg!(&data_block);
             let (_, (sorting_row, pattern_row)) = rows(data_block)?;
-            //dbg!(&sorting_row);
-            //dbg!(&pattern_row);
             Ok((s, Self{
                 body,
                 data_block,

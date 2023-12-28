@@ -10,9 +10,9 @@ fn main() -> Result<()> {
 
     let raw_templates = RawTemplates::new(&input.json, &documents)?;
 
-    let _parsed_templates = ParsedTemplates::new(&input.json, &raw_templates)?;
+    let parsed_templates = ParsedTemplates::new(&input.json, &raw_templates)?;
 
-//    println!("{parsed_templates:#?}");
+    println!("{parsed_templates:#?}");
 
     Ok(())
 
