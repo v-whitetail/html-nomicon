@@ -132,17 +132,6 @@ pub mod processing {
             }))
         }
     }
-    #[derive(Debug, Clone)]
-    pub struct DataRow<'b> {
-        raw: &'b str,
-        variables: Vec<&'b str>,
-    }
-    impl<'b> DataRow<'b> {
-        pub fn new(raw: &'b str, buffer: &'b Buffer) -> IResult<&'b str, Self> {
-            let variables = todo!();
-            Ok((raw, Self{raw, variables}))
-        }
-    }
 
 
 

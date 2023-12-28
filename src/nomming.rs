@@ -126,18 +126,6 @@ fn close_element<'s>(e: &'s str) -> impl Fn(&'s str) -> FResult<'s> {
 fn element<'s>(e:&'s str) -> impl Fn(&'s str) -> FResult<'s> {
     move |s| map_parser(close_element(e), open_element(e))(s)
 }
-fn variable<'s>(v: &'s str) -> impl Fn(&'s str) -> FResult<'s> {
-    move |s| recognize(pair(tag(PREFIX), tag(v)))(s)
-}
-fn delimit_data_row() -> impl Fn(&'static str) -> FResult<'static> {
-    move |s| take_with_tag3((CLOSE.0, TD, CLOSE.1))(s)
-}
-fn variable_cell<'s>(v: &'s str) -> impl Fn(&'s str) -> FResult<'s> {
-    move |s| preceded(take_until(PREFIX), variable(v))(s)
-}
-fn variable_element<'s>(v:&'s str) -> impl Fn(&'s str) -> FResult<'s> {
-    move |s| map_parser(element(TD), variable_cell(v))(s)
-}
 fn tag_class<'s>(e:&'s str, c:&'s str) -> impl Fn(&'s str) -> FResult<'s> {
     move |s| map_parser(element(e), trim_until_tag4((OPEN, e, CLASS, c)))(s)
 }
