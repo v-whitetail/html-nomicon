@@ -1,55 +1,122 @@
-#![allow(unused, dead_code)]
-
-use std::borrow::Cow;
 use nom::{
     IResult,
-    combinator::recognize,
-    sequence::{ pair, tuple, preceded, delimited, },
-    bytes::complete::{ tag, take_until, take_till, },
-    character::complete::space0,
+    branch::alt,
+    sequence::{ pair, preceded, terminated, delimited, },
+    combinator::{ opt, rest, peek, recognize, map_parser, },
+    bytes::complete::{ tag, take_until, },
 };
 
-type PResult<'s> = IResult<&'s str, &'s str>;
-fn variable<'s>(t:&'s str) -> impl Fn(&'s str) -> PResult<'s> {
-    move |s| recognize(pair(tag("_"), tag(t)))(s)
+
+const TR: &'static str = "tr";
+const BODY: &'static str = "body";
+const TABLE: &'static str = "table";
+const DATA_BLOCK: &'static str = "data_block";
+const TITLE_BLOCK: &'static str = "title_block";
+const PATTERN_ROW: &'static str = "pattern_row";
+const SORTING_ROW: &'static str = "sorting_row";
+const OPEN: &'static str = "<";
+const CLASS: &'static str = " class=\"";
+const CLOSE: (&'static str, &'static str) = ("</",">");
+const PREFIX: &'static str = "_";
+
+
+pub fn body(s: &str) -> IResult<&str, &str> {
+    element(BODY)(s)
 }
-fn take_once<'s>(t:&'s str) -> impl Fn(&'s str) -> PResult<'s> {
-    move |s| recognize(pair(take_until(t), tag(t)))(s)
+pub fn data_block(s: &str) -> IResult<&str, &str> {
+    class_element(TABLE, DATA_BLOCK)(s)
 }
-fn open_tag<'s>(t:&'s str) -> impl Fn(&'s str) -> PResult<'s> {
-    move |s| recognize(delimited(take_once("<"), tag(t), space0))(s)
+pub fn title_block(s: &str) -> IResult<&str, Option<&str>> {
+    opt(class_element(TABLE, TITLE_BLOCK))(s)
 }
-fn close_tag<'s>(t:&'s str) -> impl Fn(&'s str) -> PResult<'s> {
-    move |s| recognize(delimited(take_once("</"), tag(t), tag(">")))(s)
+pub fn sorting_row(s: &str) -> IResult<&str, Option<&str>> {
+    opt(class_element(TR, SORTING_ROW))(s)
 }
-fn class_name<'s>(t:&'s str) -> impl Fn(&'s str) -> PResult<'s> {
-    move |s| recognize(pair(tag("class="), take_once(t)))(s)
+pub fn pattern_row(s: &str) -> IResult<&str, Option<&str>> {
+    opt(class_element(TR, PATTERN_ROW))(s)
 }
-fn class_tendril<'s>(t:&'s str, n:&'s str) -> impl Fn(&'s str) -> PResult<'s> {
-    move |s| recognize(delimited(open_tag(t), class_name(n), close_tag(t)))(s)
+pub fn rows(s: &str) -> IResult<&str, (Option<&str>, Option<&str>)> {
+    pair(sorting_row, pattern_row)(s)
 }
-fn noclass_tendril<'s>(t:&'s str) -> impl Fn(&'s str) -> PResult<'s> {
-    move |s| recognize(pair(open_tag(t), close_tag(t)))(s)
+pub fn blocks(s: &str) -> IResult<&str, (Option<&str>, &str)> {
+    pair(title_block, data_block)(s)
 }
 
-//pub fn body(s: &str) -> IResult<&str, &str> {
-//    Class::Body.parse(s)
-//}
-//pub fn sorting_row(s: &str) -> IResult<&str, &str> {
-//    Class::Tr("sorting_row").parse(s)
-//}
-//pub fn pattern_row(s: &str) -> IResult<&str, &str> {
-//    Class::Tr("pattern_row").parse(s)
-//}
-//pub fn title_block(s: &str) -> IResult<&str, &str> {
-//    Class::Table("title_block").parse(s)
-//}
-//pub fn data_block(s: &str) -> IResult<&str, &str> {
-//    Class::Table("data_block").parse(s)
-//}
-//pub fn rows(s: &str) -> IResult<&str, (&str, &str)> {
-//    pair(sorting_row, pattern_row)(s)
-//}
-//pub fn blocks(s: &str) -> IResult<&str, (&str, &str)> {
-//    pair(title_block, data_block)(s)
-//}
+
+
+
+
+type Tag1<'s> = (&'s str);
+type Tag2<'s> = (&'s str, &'s str);
+type Tag3<'s> = (&'s str, &'s str, &'s str);
+type FResult<'s> = IResult<&'s str, &'s str>;
+fn tag2<'s>(t: Tag2<'s>) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| recognize(pair(tag(t.0), tag(t.1)))(s)
+}
+fn tag3<'s>(t: Tag3<'s>) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| recognize(pair(tag(t.0), tag2((t.1, t.2))))(s)
+}
+fn skip_to_tag<'s>(t: Tag1<'s>) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| preceded(take_until(t), peek(tag(t)))(s)
+}
+fn skip_to_tag2<'s>(t: Tag2<'s>) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| alt((
+            preceded(take_until(t.0), peek(tag2(t))),
+            preceded(take_with_tag(t.0), skip_to_tag2(t)),
+            ))(s)
+}
+fn skip_to_tag3<'s>(t: Tag3<'s>) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| alt((
+            preceded(take_until(t.0), peek(tag3(t))),
+            preceded(take_with_tag(t.0), skip_to_tag3(t)),
+            ))(s)
+}
+fn take_with_tag<'s>(t: Tag1<'s>) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| recognize(pair(skip_to_tag(t), tag(t)))(s)
+}
+fn take_with_tag2<'s>(t: Tag2<'s>) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| recognize(pair(skip_to_tag2(t), tag2(t)))(s)
+}
+fn take_with_tag3<'s>(t: Tag3<'s>) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| recognize(pair(skip_to_tag3(t), tag3(t)))(s)
+}
+fn trim_until_tag<'s>(t: Tag1<'s>) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| preceded(skip_to_tag(t), rest)(s)
+}
+fn trim_until_tag2<'s>(t: Tag2<'s>) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| preceded(skip_to_tag2(t), rest)(s)
+}
+fn trim_until_tag3<'s>(t: Tag3<'s>) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| preceded(skip_to_tag3(t), rest)(s)
+}
+
+
+
+
+
+fn open_element<'s>(e: &'s str) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| trim_until_tag2((OPEN, e))(s)
+}
+fn close_element<'s>(e: &'s str) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| recognize(take_with_tag3((CLOSE.0, e, CLOSE.1)))(s)
+}
+
+
+
+
+
+fn element<'s>(e:&'s str) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| map_parser(close_element(e), open_element(e))(s)
+}
+fn variable<'s>(v: &'s str) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| recognize(pair(tag(PREFIX), tag(v)))(s)
+}
+fn tag_class<'s>(e:&'s str, c:&'s str) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| map_parser(element(e), tag3((OPEN, e, c)))(s)
+}
+fn class_element<'s>(e:&'s str, c:&'s str) -> impl Fn(&'s str) -> FResult<'s> {
+    move |s| alt((
+            tag_class(e, c),
+            preceded(element(e), class_element(e, c))
+            ))(s)
+}

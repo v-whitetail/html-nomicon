@@ -1,30 +1,18 @@
 #![allow(unused, dead_code)]
-#![feature(type_alias_impl_trait)]
 
 pub mod cli;
 pub mod nomming;
-
 pub mod processing {
 
-    use crate::{
-        cli::Input,
-        nomming::*,
-    };
+    use nom::IResult;
     use rayon::prelude::*;
     use anyhow::{ anyhow, Result, };
-    use serde::{ Serialize, Deserialize, };
     use serde_json::{ json, Map, Value, };
-    use nom::{
-        IResult,
-        combinator::recognize,
-        sequence::{ pair, preceded, },
-        bytes::complete::{ tag, take_until, },
-    };
+    use serde::{ Serialize, Deserialize, };
+    use crate::{ cli::Input, nomming::*, };
     use std::{
         cmp::max,
-        io::Write,
         path::PathBuf,
-        borrow::Cow,
         fs::{ OpenOptions, read_dir, read_to_string, canonicalize, },
     };
 
@@ -83,11 +71,6 @@ pub mod processing {
         partdata: Map<String, Value>,
     }
     impl Buffer {
-        pub fn index_part_headers(&self, value: Value) -> Option<usize> {
-            if let Some(Value::Array(headers)) = self.partdata.get("headers") {
-                headers.iter().position(|v| *v == value)
-            } else { None }
-        }
         pub fn list_all_headers(&self) -> Box<[&str]> {
             self.partdata
                 .iter()
@@ -110,10 +93,18 @@ pub mod processing {
                 .flatten()
                 .filter_map( |report| report.as_str() )
                 .collect::<Vec<_>>();
+            listed_reports.sort();
             listed_reports.dedup();
+            dbg!(&listed_reports);
             Ok(listed_reports)
         }
+        fn index_part_headers(&self, value: Value) -> Option<usize> {
+            if let Some(Value::Array(headers)) = self.partdata.get("headers") {
+                headers.iter().position(|v| *v == value)
+            } else { None }
+        }
     }
+
 
 
 
@@ -122,16 +113,22 @@ pub mod processing {
     #[derive(Debug, Clone)]
     pub struct Template<'b> {
         body: &'b str,
-        title_block: &'b str,
         data_block: &'b str,
-        sorting_row: &'b str,
-        pattern_row: &'b str,
+        title_block: Option<&'b str>,
+        sorting_row: Option<&'b str>,
+        pattern_row: Option<&'b str>,
     }
     impl<'b> Template<'b> {
         pub fn new(s: &'b str) -> IResult<&str, Self> {
+            //dbg!(body(s));
             let (_, body) = body(s)?;
-            let (_, (title_block, data_block)) = blocks(s)?;
-            let (_, (sorting_row, pattern_row)) = rows(s)?;
+            dbg!(&body);
+            let (_, (title_block, data_block)) = blocks(body)?;
+            //dbg!(&title_block);
+            //dbg!(&data_block);
+            let (_, (sorting_row, pattern_row)) = rows(data_block)?;
+            //dbg!(&sorting_row);
+            //dbg!(&pattern_row);
             Ok((s, Self{
                 body,
                 data_block,
@@ -146,6 +143,8 @@ pub mod processing {
 
 
 
+
+    #[derive(Debug, Clone)]
     pub struct RawTemplates<'b>{
         listed_reports: Vec<&'b str>,
         templates: Box<[String]>,
@@ -154,9 +153,8 @@ pub mod processing {
         pub fn new(buffer: &'b Buffer, documents: &Documents) -> Result<Self> {
             let listed_reports = buffer.list_all_reports()?;
             let templates = listed_reports
-                .iter() 
+                .par_iter() 
                 .filter_map( |&stem| documents.check_template(stem) )
-                .par_bridge()
                 .filter_map( |path| read_to_string(path).ok() )
                 .collect();
             Ok(Self{listed_reports, templates})
@@ -167,20 +165,24 @@ pub mod processing {
 
 
 
+
+    #[derive(Debug, Clone)]
     pub struct ParsedTemplates<'b>{
         buffer: &'b Buffer,
         templates: Box<[Template<'b>]>,
     }
     impl<'b> ParsedTemplates<'b> {
-        pub fn new(buffer: &'b Buffer, raw_templates: &'b RawTemplates<'b>)
-            -> Result<Self> {
-                let templates = raw_templates
-                    .templates
-                    .par_iter()
-                    .filter_map( |template| Template::new(template).ok() )
-                    .map( |(input, output)| output )
-                    .collect();
-                Ok(Self{buffer, templates})
-            }
+        pub fn new(
+            buffer: &'b Buffer,
+            raw_templates: &'b RawTemplates<'b>
+            ) -> Result<Self> {
+            let templates = raw_templates
+                .templates
+                .par_iter()
+                .filter_map( |template| Template::new(template).ok() )
+                .map( |(input, output)| output )
+                .collect();
+            Ok(Self{buffer, templates})
+        }
     }
 }
