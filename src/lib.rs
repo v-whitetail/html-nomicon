@@ -95,8 +95,29 @@ pub mod processing {
                 .collect::<Vec<_>>();
             listed_reports.sort();
             listed_reports.dedup();
-            dbg!(&listed_reports);
             Ok(listed_reports)
+        }
+        pub fn list_parts(&self, sort: Option<&str>) -> Result<Vec<(&String, &Value)>> {
+            let sort_index = match sort {
+                Some(header) => Some(self
+                    .index_part_headers(json!(header))
+                    .ok_or(anyhow!("\"{header:#?}\" header not found"))?),
+                None => None,
+            };
+            let mut parts = self.partdata
+                .iter()
+                .filter( |&(key, value)| key != "headers" )
+                .collect::<Vec<_>>();
+            parts.sort_by_key( |&(key, value)|
+                               value
+                               .as_array()
+                               .expect( "part item not defined as json array" )
+                               .get(sort_index.unwrap_or_default())
+                               .expect( "header array is longer than part data" )
+                               .as_str()
+                             );
+            parts.dedup();
+            Ok(parts)
         }
         fn index_part_headers(&self, value: Value) -> Option<usize> {
             if let Some(Value::Array(headers)) = self.partdata.get("headers") {
@@ -104,7 +125,6 @@ pub mod processing {
             } else { None }
         }
     }
-
 
 
 
