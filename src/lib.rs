@@ -9,10 +9,14 @@ pub mod processing {
     use anyhow::{ anyhow, Result, };
     use serde_json::{ json, Map, Value, };
     use serde::{ Serialize, Deserialize, };
-    use crate::{ cli::Input, nomming::*, };
+    use crate::{ cli::Input, nomming::*, builder::*, };
     use std::{
         cmp::max,
+        ops::Deref,
+        sync::Arc,
         path::PathBuf,
+        borrow::Borrow,
+        collections::*,
         fs::{ OpenOptions, read_dir, read_to_string, canonicalize, },
     };
 
@@ -64,67 +68,6 @@ pub mod processing {
 
 
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct Buffer {
-        projdata: Map<String, Value>,
-        userdata: Map<String, Value>,
-        partdata: Map<String, Value>,
-    }
-    impl Buffer {
-        pub fn list_all_headers(&self) -> Box<[&str]> {
-            self.partdata
-                .iter()
-                .filter( |&(key, _value)| key == "headers" )
-                .filter_map( |(_key, value)| value.as_array() )
-                .flatten()
-                .filter_map( |header| header.as_str() )
-                .collect()
-        }
-        pub fn list_all_reports(&self) -> Result<Vec<&str>> {
-            let reports_index = self
-                .index_part_headers(json!("rep"))
-                .ok_or(anyhow!("\"rep\" header not found"))?;
-            let mut listed_reports = self.partdata
-                .iter()
-                .filter( |&(key, value)| key != "headers" )
-                .filter_map( |(key, value)| value.as_array() )
-                .filter_map( |entries| entries.get(reports_index) )
-                .filter_map( |reports| reports.as_array() )
-                .flatten()
-                .filter_map( |report| report.as_str() )
-                .collect::<Vec<_>>();
-            listed_reports.sort();
-            listed_reports.dedup();
-            Ok(listed_reports)
-        }
-        pub fn list_parts(&self, sort: Option<&str>) -> Result<Vec<(&String, &Value)>> {
-            let sort_index = match sort {
-                Some(header) => Some(self
-                    .index_part_headers(json!(header))
-                    .ok_or(anyhow!("\"{header:#?}\" header not found"))?),
-                None => None,
-            };
-            let mut parts = self.partdata
-                .iter()
-                .filter( |&(key, value)| key != "headers" )
-                .collect::<Vec<_>>();
-            parts.sort_by_key( |&(key, value)|
-                               value
-                               .as_array()
-                               .expect( "part item not defined as json array" )
-                               .get(sort_index.unwrap_or_default())
-                               .expect( "header array is longer than part data" )
-                               .as_str()
-                             );
-            parts.dedup();
-            Ok(parts)
-        }
-        fn index_part_headers(&self, value: Value) -> Option<usize> {
-            if let Some(Value::Array(headers)) = self.partdata.get("headers") {
-                headers.iter().position(|v| *v == value)
-            } else { None }
-        }
-    }
 
 
 
@@ -197,6 +140,129 @@ pub mod processing {
                 .map( |(input, output)| output )
                 .collect();
             Ok(Self{buffer, templates})
+        }
+    }
+}
+
+
+
+
+
+pub mod buffer {
+    use std::sync::Arc;
+    use std::collections::BTreeMap;
+    use anyhow::{ Result, anyhow, };
+    use serde::{ Serialize, Deserialize };
+
+    pub type Key = Arc<str>;
+    pub type List = Arc<[Box<str>]>;
+    pub type Value = Arc<str>;
+    pub type MixedList = Arc<[Variable]>;
+
+
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct ProjectData {
+        pub data: BTreeMap<Key, Value>,
+    }
+
+
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct UserData {
+        pub data: BTreeMap<Key, Value>,
+    }
+
+
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct PartData {
+        pub headers: List,
+        pub parts: BTreeMap<Key, MixedList>,
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    pub enum Variable {
+        Name(Value),
+        List(List),
+    }
+    impl Variable {
+        pub fn as_name(self) -> Option<Value> {
+            match self {
+                Self::Name(value) => Some(value),
+                _ => None,
+            }
+        }
+        pub fn as_list(self) -> Option<List> {
+            match self {
+                Self::List(list) => Some(list),
+                _ => None,
+            }
+        }
+    }
+
+
+
+
+
+
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct Buffer {
+        projdata: ProjectData,
+        userdata: UserData,
+        partdata: PartData,
+    }
+    impl Buffer {
+        pub fn list_all_headers(&self) -> Box<[Box<str>]> {
+            self.partdata.headers
+                .iter()
+                .filter( |&(key, _)| key.deref() == "headers" )
+                .filter_map( |(_, value)| value.as_list() )
+                .map( |list| list.deref() )
+                .flatten()
+                .cloned()
+                .collect()
+        }
+        pub fn list_all_reports(&self) -> Result<Vec<&str>> {
+            let reports_index = self
+                .index_part_headers("rep")
+                .ok_or(anyhow!("\"rep\" header not found"))?;
+            let mut listed_reports = self.partdata
+                .iter()
+                .filter( |&(key, _)| key.deref() != "headers" )
+                .filter_map( |(_, value)| value.as_list() )
+                .filter_map( |entries| entries.get(reports_index) )
+                .filter_map( |reports| reports )
+                .flatten()
+                .filter_map( |report| report.as_str() )
+                .collect::<Vec<_>>();
+            listed_reports.sort();
+            listed_reports.dedup();
+            Ok(listed_reports)
+        }
+        pub fn list_parts(&self, sort: Option<&str>) -> Result<Vec<(&String, &Value)>> {
+            let sort_index = match sort {
+                Some(header) => Some(self
+                    .index_part_headers(header)
+                    .ok_or(anyhow!("\"{header:#?}\" header not found"))?),
+                None => None,
+            };
+            let mut parts = self.partdata
+                .iter()
+                .filter( |&(key, value)| key != "headers" )
+                .collect::<Vec<_>>();
+            parts.sort_by_key( |&(key, value)|
+                               value
+                               .as_array()
+                               .expect( "part item not defined as json array" )
+                               .get(sort_index.unwrap_or_default())
+                               .expect( "header array is longer than part data" )
+                               .as_str()
+                             );
+            parts.dedup();
+            Ok(parts)
+        }
+        fn index_part_headers(&self, value: &str) -> Option<usize> {
+            if let Some(Variable::List(headers)) = self.partdata.get("headers") {
+                headers.iter().position(|&v| *v == *value)
+            } else { None }
         }
     }
 }
