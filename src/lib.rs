@@ -7,7 +7,7 @@ pub mod processing {
     use nom::IResult;
     use rayon::prelude::*;
     use anyhow::{ anyhow, Result, };
-    use serde_json::{ json, Map, Value, };
+    use serde_json::{ json, };
     use serde::{ Serialize, Deserialize, };
     use crate::{ cli::Input, nomming::*, buffer::*, };
     use std::{
@@ -103,7 +103,7 @@ pub mod processing {
 
     #[derive(Debug, Clone)]
     pub struct RawTemplates {
-        listed_reports: Vec<Arc<str>>,
+        listed_reports: Box<[Value]>,
         templates: Box<[String]>,
     }
     impl<'b> RawTemplates {
@@ -158,10 +158,10 @@ pub mod buffer {
     use anyhow::{ Result, anyhow, };
     use serde::{ Serialize, Deserialize };
 
-    pub type Key = Arc<str>;
-    pub type List = Vec<Value>;
-    pub type Value = Arc<str>;
-    pub type MixedList = Vec<Variable>;
+    pub type Key = Box<str>;
+    pub type List = Box<[Value]>;
+    pub type Value = Box<str>;
+    pub type MixedList = Box<[Variable]>;
 
 
     #[derive(Debug, Serialize, Deserialize)]
@@ -217,7 +217,7 @@ pub mod buffer {
         fn index_part_headers(&self, value: &str) -> Option<usize> {
             self.partdata.headers.iter().position(|v| **v == *value)
         }
-        pub fn list_all_reports(&self) -> Result<Vec<Value>> {
+        pub fn list_all_reports(&self) -> Result<Box<[Value]>> {
             let reports_index = self
                 .index_part_headers("rep")
                 .ok_or(anyhow!("\"rep\" header not found"))?;
@@ -225,11 +225,12 @@ pub mod buffer {
                 .iter()
                 .filter_map( |(_, value)| value.get(reports_index) )
                 .filter_map( |reports| reports.as_list() )
+                .map( |list| list.as_ref().to_owned() )
                 .flatten()
                 .collect::<Vec<_>>();
             listed_reports.sort();
             listed_reports.dedup();
-            Ok(listed_reports)
+            Ok(listed_reports.into())
         }
         pub fn list_parts(&self, sort: &str) -> Result<BTreeMap<Key, Value>> {
             let sort_index = self.index_part_headers(sort)
