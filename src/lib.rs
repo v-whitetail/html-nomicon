@@ -9,7 +9,7 @@ pub mod processing {
     use anyhow::{ anyhow, Result, };
     use serde_json::{ json, Map, Value, };
     use serde::{ Serialize, Deserialize, };
-    use crate::{ cli::Input, nomming::*, builder::*, };
+    use crate::{ cli::Input, nomming::*, buffer::*, };
     use std::{
         cmp::max,
         ops::Deref,
@@ -102,16 +102,16 @@ pub mod processing {
 
 
     #[derive(Debug, Clone)]
-    pub struct RawTemplates<'b>{
-        listed_reports: Vec<&'b str>,
+    pub struct RawTemplates {
+        listed_reports: Vec<Arc<str>>,
         templates: Box<[String]>,
     }
-    impl<'b> RawTemplates<'b> {
+    impl<'b> RawTemplates {
         pub fn new(buffer: &'b Buffer, documents: &Documents) -> Result<Self> {
             let listed_reports = buffer.list_all_reports()?;
             let templates = listed_reports
                 .par_iter() 
-                .filter_map( |&stem| documents.check_template(stem) )
+                .filter_map( |stem| documents.check_template(stem) )
                 .filter_map( |path| read_to_string(path).ok() )
                 .collect();
             Ok(Self{listed_reports, templates})
@@ -131,7 +131,7 @@ pub mod processing {
     impl<'b> ParsedTemplates<'b> {
         pub fn new(
             buffer: &'b Buffer,
-            raw_templates: &'b RawTemplates<'b>
+            raw_templates: &'b RawTemplates
             ) -> Result<Self> {
             let templates = raw_templates
                 .templates
@@ -149,15 +149,19 @@ pub mod processing {
 
 
 pub mod buffer {
-    use std::sync::Arc;
-    use std::collections::BTreeMap;
+    use std::{
+        ops::Deref,
+        sync::Arc,
+        borrow::Borrow,
+        collections::BTreeMap,
+    };
     use anyhow::{ Result, anyhow, };
     use serde::{ Serialize, Deserialize };
 
     pub type Key = Arc<str>;
-    pub type List = Arc<[Box<str>]>;
+    pub type List = Vec<Value>;
     pub type Value = Arc<str>;
-    pub type MixedList = Arc<[Variable]>;
+    pub type MixedList = Vec<Variable>;
 
 
     #[derive(Debug, Serialize, Deserialize)]
@@ -184,15 +188,15 @@ pub mod buffer {
         List(List),
     }
     impl Variable {
-        pub fn as_name(self) -> Option<Value> {
+        pub fn as_name(&self) -> Option<Value> {
             match self {
-                Self::Name(value) => Some(value),
+                Self::Name(value) => Some(value.clone()),
                 _ => None,
             }
         }
-        pub fn as_list(self) -> Option<List> {
+        pub fn as_list(&self) -> Option<List> {
             match self {
-                Self::List(list) => Some(list),
+                Self::List(list) => Some(list.clone()),
                 _ => None,
             }
         }
@@ -210,59 +214,37 @@ pub mod buffer {
         partdata: PartData,
     }
     impl Buffer {
-        pub fn list_all_headers(&self) -> Box<[Box<str>]> {
-            self.partdata.headers
-                .iter()
-                .filter( |&(key, _)| key.deref() == "headers" )
-                .filter_map( |(_, value)| value.as_list() )
-                .map( |list| list.deref() )
-                .flatten()
-                .cloned()
-                .collect()
+        fn index_part_headers(&self, value: &str) -> Option<usize> {
+            self.partdata.headers.iter().position(|v| **v == *value)
         }
-        pub fn list_all_reports(&self) -> Result<Vec<&str>> {
+        pub fn list_all_reports(&self) -> Result<Vec<Value>> {
             let reports_index = self
                 .index_part_headers("rep")
                 .ok_or(anyhow!("\"rep\" header not found"))?;
-            let mut listed_reports = self.partdata
+            let mut listed_reports = self.partdata.parts
                 .iter()
-                .filter( |&(key, _)| key.deref() != "headers" )
-                .filter_map( |(_, value)| value.as_list() )
-                .filter_map( |entries| entries.get(reports_index) )
-                .filter_map( |reports| reports )
+                .filter_map( |(_, value)| value.get(reports_index) )
+                .filter_map( |reports| reports.as_list() )
                 .flatten()
-                .filter_map( |report| report.as_str() )
                 .collect::<Vec<_>>();
             listed_reports.sort();
             listed_reports.dedup();
             Ok(listed_reports)
         }
-        pub fn list_parts(&self, sort: Option<&str>) -> Result<Vec<(&String, &Value)>> {
-            let sort_index = match sort {
-                Some(header) => Some(self
-                    .index_part_headers(header)
-                    .ok_or(anyhow!("\"{header:#?}\" header not found"))?),
-                None => None,
-            };
-            let mut parts = self.partdata
+        pub fn list_parts(&self, sort: &str) -> Result<BTreeMap<Key, Value>> {
+            let sort_index = self.index_part_headers(sort)
+                .ok_or(anyhow!("\"{sort:#?}\" header not found"))?;
+            let mut parts = self.partdata.parts
                 .iter()
-                .filter( |&(key, value)| key != "headers" )
-                .collect::<Vec<_>>();
-            parts.sort_by_key( |&(key, value)|
-                               value
-                               .as_array()
-                               .expect( "part item not defined as json array" )
-                               .get(sort_index.unwrap_or_default())
-                               .expect( "header array is longer than part data" )
-                               .as_str()
-                             );
-            parts.dedup();
+                .filter_map(
+                    |(part_id, value)|
+                    value
+                    .get(sort_index)
+                    .and_then(|sort_value| sort_value.as_name())
+                    .and_then(|sort_value| Some((sort_value, part_id.clone())))
+                    )
+                .collect::<BTreeMap<_,_>>();
             Ok(parts)
-        }
-        fn index_part_headers(&self, value: &str) -> Option<usize> {
-            if let Some(Variable::List(headers)) = self.partdata.get("headers") {
-                headers.iter().position(|&v| *v == *value)
-            } else { None }
         }
     }
 }

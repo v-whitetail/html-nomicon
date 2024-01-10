@@ -10,7 +10,7 @@ use std::{
     thread::spawn,
     sync::mpsc::{ RecvTimeoutError, channel, },
 };
-use crate::processing::Buffer;
+use crate::buffer::Buffer;
 
 
 
