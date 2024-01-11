@@ -1,7 +1,6 @@
 use clap::Parser;
 use anyhow::Result;
-use serde::Deserialize;
-use serde_json::{ Map, Value, from_str, };
+use serde_json::from_str;
 use std::{
     fs::read_to_string,
     io::{ Read, Stdin, stdin, },

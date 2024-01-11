@@ -1,11 +1,9 @@
 use nom::{
     IResult,
-    multi::separated_list0,
     branch::alt,
-    sequence::{ pair, preceded, terminated, delimited, },
-    combinator::{ map, opt, rest, peek, recognize, map_parser, iterator, },
+    sequence::{ pair, preceded, },
+    combinator::{ opt, rest, peek, recognize, map_parser, },
     bytes::complete::{ tag, take_until, },
-    character::complete::multispace0,
 };
 
 

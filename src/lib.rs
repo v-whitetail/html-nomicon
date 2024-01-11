@@ -7,18 +7,12 @@ pub mod processing {
 
     use nom::IResult;
     use rayon::prelude::*;
-    use anyhow::{ anyhow, Result, };
-    use serde_json::{ json, };
-    use serde::{ Serialize, Deserialize, };
-    use crate::{ cli::Input, nomming::*, buffer::*, };
+    use anyhow::{ Result, };
+    use crate::{ nomming::*, buffer::*, };
     use std::{
         cmp::max,
-        ops::Deref,
-        sync::Arc,
         path::PathBuf,
-        borrow::Borrow,
-        collections::*,
-        fs::{ OpenOptions, read_dir, read_to_string, canonicalize, },
+        fs::{ read_dir, read_to_string, },
     };
 
 
