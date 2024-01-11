@@ -1,26 +1,17 @@
 use std::{
+    sync::Arc,
     collections::BTreeMap,
 };
 use anyhow::{ Result, anyhow, };
 use serde::{ Serialize, Deserialize };
 
 pub type Key = Box<str>;
-pub type List = Box<[Value]>;
+pub type List = Arc<[Value]>;
 pub type Value = Box<str>;
-pub type MixedList = Box<[Variable]>;
-
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ProjectData (
-    BTreeMap<Key, Value>,
-    );
-
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UserData (
-    BTreeMap<Key, Value>,
-    );
-
+pub type MixedList = Arc<[Variable]>;
+pub type SortedData = BTreeMap<Key, Vec<Value>>;
+pub type UserData = BTreeMap<Key, Value>;
+pub type ProjectData = BTreeMap<Key, Value>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PartData {
@@ -56,9 +47,9 @@ impl Variable {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Buffer {
-    projdata: ProjectData,
-    userdata: UserData,
-    partdata: PartData,
+    pub projdata: ProjectData,
+    pub userdata: UserData,
+    pub partdata: PartData,
 }
 impl Buffer {
     fn index_part_headers(&self, value: &str) -> Option<usize> {
@@ -79,19 +70,25 @@ impl Buffer {
         listed_reports.dedup();
         Ok(listed_reports.into())
     }
-    pub fn list_parts(&self, sort: &str) -> Result<BTreeMap<Key, Value>> {
+    pub fn list_parts(&self, sort: &str) -> Result<SortedData> {
         let sort_index = self.index_part_headers(sort)
             .ok_or(anyhow!("\"{sort:#?}\" header not found"))?;
         let mut parts = self.partdata.parts
             .iter()
-            .filter_map(
-                |(part_id, value)|
-                value
-                .get(sort_index)
-                .and_then(|sort_value| sort_value.as_name())
-                .and_then(|sort_value| Some((sort_value, part_id.clone())))
-                )
-            .collect::<BTreeMap<_,_>>();
+            .fold(
+                SortedData::new(),
+                |mut table, (part_id, value)| {
+                    if let Some(sort_value) = value
+                        .get(sort_index)
+                            .and_then( |sort_value| sort_value.as_name() ) {
+                                if let Some(prev) = table.get_mut(&sort_value) {
+                                    prev.push(part_id.clone());
+                                } else {
+                                    table.insert(part_id.clone(), Vec::new());
+                                }
+                            };
+                    table
+                });
         Ok(parts)
     }
 }

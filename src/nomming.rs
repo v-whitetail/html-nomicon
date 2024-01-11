@@ -3,7 +3,7 @@ use nom::{
     branch::alt,
     sequence::{ pair, preceded, },
     combinator::{ opt, rest, peek, recognize, map_parser, },
-    bytes::complete::{ tag, take_until, },
+    bytes::complete::{ tag, take_until, }, character::complete::alpha1,
 };
 
 
@@ -41,6 +41,15 @@ pub fn pattern_row(s: &str) -> IResult<&str, Option<&str>> {
 }
 pub fn rows(s: &str) -> IResult<&str, (Option<&str>, Option<&str>)> {
     pair(sorting_row, pattern_row)(s)
+}
+pub fn variable<'s>(s:&'s str, t:&'s str) -> IResult<&'s str, &'s str> {
+    preceded(take_until(PREFIX), tag2((PREFIX,t)))(s)
+}
+pub fn sorting_variable<'s>(s:&'s str) -> IResult<&'s str, &'s str> {
+    preceded(
+        take_until(PREFIX),
+        recognize(pair(tag(PREFIX), alpha1))
+        )(s)
 }
 
 
