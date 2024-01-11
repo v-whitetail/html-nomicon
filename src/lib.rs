@@ -165,15 +165,15 @@ pub mod buffer {
 
 
     #[derive(Debug, Serialize, Deserialize)]
-    pub struct ProjectData {
-        pub data: BTreeMap<Key, Value>,
-    }
+    pub struct ProjectData (
+        BTreeMap<Key, Value>,
+    );
 
 
     #[derive(Debug, Serialize, Deserialize)]
-    pub struct UserData {
-        pub data: BTreeMap<Key, Value>,
-    }
+    pub struct UserData (
+        BTreeMap<Key, Value>,
+    );
 
 
     #[derive(Debug, Serialize, Deserialize)]
@@ -183,6 +183,7 @@ pub mod buffer {
     }
 
     #[derive(Debug, Serialize, Deserialize)]
+    #[serde(untagged)]
     pub enum Variable {
         Name(Value),
         List(List),
