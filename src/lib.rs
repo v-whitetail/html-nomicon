@@ -1,4 +1,5 @@
 #![allow(unused, dead_code)]
+#![feature(slice_group_by)]
 
 pub mod cli;
 pub mod buffer;
@@ -14,7 +15,6 @@ pub mod processing {
         path::PathBuf,
         fs::{ read_dir, read_to_string, },
     };
-
 
 
 
@@ -62,12 +62,6 @@ pub mod processing {
 
 
 
-
-
-
-
-
-
     #[derive(Debug, Clone)]
     pub struct Template<'b> {
         body: &'b str,
@@ -95,7 +89,6 @@ pub mod processing {
 
 
 
-
     #[derive(Debug, Clone)]
     pub struct RawTemplates {
         listed_reports: Box<[Value]>,
@@ -117,9 +110,8 @@ pub mod processing {
 
 
 
-
     #[derive(Debug, Clone)]
-    pub struct ParsedTemplates<'b>{
+    pub struct ParsedTemplates<'b> {
         buffer: &'b Buffer,
         templates: Box<[Template<'b>]>,
     }
