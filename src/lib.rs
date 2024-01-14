@@ -8,7 +8,7 @@ pub mod processing {
 
     use nom::IResult;
     use rayon::prelude::*;
-    use anyhow::{ Result, bail, };
+    use anyhow::{ Result, bail, anyhow, };
     use crate::{ nomming::*, buffer::*, };
     use std::{
         cmp::max,
@@ -69,18 +69,23 @@ pub mod processing {
         title_block: &'b str,
         sorting_row: Option<&'b str>,
         pattern_row: Option<&'b str>,
+        sorting_variable: Option<&'b str>,
     }
     impl<'b> Template<'b> {
         pub fn new(s: &'b str) -> IResult<&str, Self> {
             let (_, body) = body(s)?;
             let (_, (title_block, data_block)) = blocks(body)?;
             let (_, (sorting_row, pattern_row)) = rows(data_block)?;
+            let sorting_variable = sorting_row
+                .and_then( |row| sorting_variable(row).ok() )
+                .and_then( |(_, variable)| Some(variable));
             Ok((s, Self{
                 body,
                 data_block,
                 title_block,
                 sorting_row,
                 pattern_row,
+                sorting_variable,
             }))
         }
     }
@@ -90,75 +95,46 @@ pub mod processing {
 
     #[derive(Debug)]
     pub enum TemplateData<'b> {
-        Raw(Box<[String]>),
+        Raw(Box<[(String, Buffer)]>),
         Parsed(Box<[(Template<'b>, Buffer)]>),
     }
-    impl<'b, 'a: 'b> TemplateData<'b> {
-        pub fn new(buffer: &'b Buffer, documents: &Documents) -> Result<Self> {
+    impl<'b> TemplateData<'b> {
+        pub fn new(documents: &Documents, buffer: &'b Buffer) -> Result<Self> {
             let templates = buffer
                 .list_all_reports()?
                 .iter() 
                 .filter_map( |stem| documents.check_template(stem) )
                 .filter_map( |path| read_to_string(path).ok() )
+                .map( |file| (file, buffer.clone()) )
                 .collect();
             Ok(Self::Raw(templates))
         }
-        pub fn few(&'a self, buffer: &'b Buffer) -> Result<Self> {
+        pub fn parse(&'b self) -> Result<Self> {
             match self {
                 Self::Raw(raw_templates) => {
                     let templates = raw_templates
                         .par_iter()
-                        .filter_map( |template| Template::new(template).ok() )
-                        .map( |(input, output)| (output, buffer.clone()) )
+                        .filter_map(|(template, buffer)|
+                                     Template::new(template)
+                                     .ok()
+                                     .and_then( |(_, template)|
+                                                Some((template, buffer))
+                                              )
+                                   )
+                        .filter_map( |(template, buffer)|
+                                     buffer
+                                     .clone()
+                                     .sort(template.sorting_variable)
+                                     .ok()
+                                     .and_then( |buffer|
+                                                Some((template, buffer))
+                                              )
+                                   )
                         .collect();
                     Ok(Self::Parsed(templates))
                 },
                 _ => bail!("attempted to re-parse {self:#?}"),
             }
-        }
-    }
-
-
-
-
-
-    #[derive(Debug, Clone)]
-    pub struct RawTemplates {
-        listed_reports: Box<[Value]>,
-        templates: Box<[String]>,
-    }
-    impl<'b> RawTemplates {
-        pub fn new(buffer: &'b Buffer, documents: &Documents) -> Result<Self> {
-            let listed_reports = buffer.list_all_reports()?;
-            let templates = listed_reports
-                .par_iter() 
-                .filter_map( |stem| documents.check_template(stem) )
-                .filter_map( |path| read_to_string(path).ok() )
-                .collect();
-            Ok(Self{listed_reports, templates})
-        }
-    }
-
-
-
-
-
-    #[derive(Debug, Clone)]
-    pub struct ParsedTemplates<'b> {
-        templates: Box<[(Template<'b>, Buffer)]>,
-    }
-    impl<'b> ParsedTemplates<'b> {
-        pub fn new(
-            buffer: &'b Buffer,
-            raw_templates: &'b RawTemplates
-            ) -> Result<Self> {
-            let templates = raw_templates
-                .templates
-                .par_iter()
-                .filter_map( |template| Template::new(template).ok() )
-                .map( |(input, output)| (output, buffer.clone()) )
-                .collect();
-            Ok(Self{templates})
         }
     }
 }

@@ -18,7 +18,7 @@ const SORTING_ROW: &'static str = "sorting_row";
 const OPEN: &'static str = "<";
 const CLASS: &'static str = " class=\"";
 const CLOSE: (&'static str, &'static str) = ("</",">");
-const PREFIX: &'static str = "_";
+const PREFIX: &'static str = "~";
 
 
 pub fn body(s: &str) -> IResult<&str, &str> {
@@ -48,7 +48,7 @@ pub fn variable<'s>(s:&'s str, t:&'s str) -> IResult<&'s str, &'s str> {
 pub fn sorting_variable<'s>(s:&'s str) -> IResult<&'s str, &'s str> {
     preceded(
         take_until(PREFIX),
-        recognize(pair(tag(PREFIX), alpha1))
+        preceded(tag(PREFIX), alpha1)
         )(s)
 }
 

@@ -85,11 +85,12 @@ impl Buffer {
         listed_reports.dedup();
         Ok(listed_reports.into())
     }
-    pub fn sort(mut self, sort_variable: Option<&str>) -> Result<()> {
-        self.sort_index(sort_variable)?
+    pub fn sort(self, sort_variable: Option<&str>) -> Result<Self> {
+        let sorted = self.clone()
+            .sort_index(sort_variable)?
             .part_map_keys()?
             .part_map_values()?;
-        Ok(())
+        Ok(sorted)
     }
     fn index_part_headers(&self, value: &str) -> Result<usize> {
         self.partdata.headers
@@ -98,10 +99,11 @@ impl Buffer {
             .ok_or_else( || anyhow!("\"{value:#?}\" not found in headers") )
     }
     fn sort_index(mut self, sort_variable: Option<&str>) -> Result<Self> {
+        dbg!(&sort_variable);
         if let Some(index) = sort_variable.and_then(
             |variable| self.index_part_headers(variable).ok()
             ) {
-            self.sort_index = Some(index)
+            self.sort_index = Some(index);
         };
         Ok(self)
     }

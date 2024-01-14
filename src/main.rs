@@ -8,7 +8,11 @@ fn main() -> Result<()> {
 
     let documents = Documents::new(&input.path)?;
 
-    let raw_templates = RawTemplates::new(&input.json, &documents)?;
+    let raw_templates = TemplateData::new(&documents, &input.json)?;
+
+    let parsed_templates = raw_templates.parse()?;
+
+    println!("{parsed_templates:#?}");
 
     Ok(())
 
