@@ -6,10 +6,10 @@ pub mod buffer;
 pub mod nomming;
 pub mod processing {
 
+    use crate::{ nomming::*, buffer::*, };
     use nom::IResult;
     use rayon::prelude::*;
     use anyhow::{ Result, bail, anyhow, };
-    use crate::{ nomming::*, buffer::*, };
     use std::{
         cmp::max,
         path::PathBuf,
@@ -136,5 +136,15 @@ pub mod processing {
                 _ => bail!("attempted to re-parse {self:#?}"),
             }
         }
+    }
+
+
+
+
+    pub struct BatchProcessor<'b> {
+        raw_data: TemplateData<'b>,
+        parsed_data: TemplateData<'b>,
+    }
+    impl<'b> BatchProcessor<'b> {
     }
 }

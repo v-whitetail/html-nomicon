@@ -4,8 +4,8 @@ use std::{
     collections::HashMap,
 };
 use rayon::prelude::*;
-use anyhow::{ Result, anyhow, };
 use serde::{ Serialize, Deserialize };
+use anyhow::{ Result, anyhow, };
 
 pub type Key = Arc<str>;
 pub type List = Box<[Value]>;
@@ -99,7 +99,6 @@ impl Buffer {
             .ok_or_else( || anyhow!("\"{value:#?}\" not found in headers") )
     }
     fn sort_index(mut self, sort_variable: Option<&str>) -> Result<Self> {
-        dbg!(&sort_variable);
         if let Some(index) = sort_variable.and_then(
             |variable| self.index_part_headers(variable).ok()
             ) {
