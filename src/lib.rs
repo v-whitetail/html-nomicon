@@ -8,7 +8,7 @@ pub mod processing {
 
     use nom::IResult;
     use rayon::prelude::*;
-    use anyhow::{ Result, };
+    use anyhow::{ Result, bail, };
     use crate::{ nomming::*, buffer::*, };
     use std::{
         cmp::max,
@@ -82,6 +82,39 @@ pub mod processing {
                 sorting_row,
                 pattern_row,
             }))
+        }
+    }
+
+
+
+
+    #[derive(Debug)]
+    pub enum TemplateData<'b> {
+        Raw(Box<[String]>),
+        Parsed(Box<[(Template<'b>, Buffer)]>),
+    }
+    impl<'b, 'a: 'b> TemplateData<'b> {
+        pub fn new(buffer: &'b Buffer, documents: &Documents) -> Result<Self> {
+            let templates = buffer
+                .list_all_reports()?
+                .iter() 
+                .filter_map( |stem| documents.check_template(stem) )
+                .filter_map( |path| read_to_string(path).ok() )
+                .collect();
+            Ok(Self::Raw(templates))
+        }
+        pub fn few(&'a self, buffer: &'b Buffer) -> Result<Self> {
+            match self {
+                Self::Raw(raw_templates) => {
+                    let templates = raw_templates
+                        .par_iter()
+                        .filter_map( |template| Template::new(template).ok() )
+                        .map( |(input, output)| (output, buffer.clone()) )
+                        .collect();
+                    Ok(Self::Parsed(templates))
+                },
+                _ => bail!("attempted to re-parse {self:#?}"),
+            }
         }
     }
 
