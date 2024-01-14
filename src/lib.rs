@@ -112,8 +112,7 @@ pub mod processing {
 
     #[derive(Debug, Clone)]
     pub struct ParsedTemplates<'b> {
-        buffer: &'b Buffer,
-        templates: Box<[Template<'b>]>,
+        templates: Box<[(Template<'b>, Buffer)]>,
     }
     impl<'b> ParsedTemplates<'b> {
         pub fn new(
@@ -124,9 +123,9 @@ pub mod processing {
                 .templates
                 .par_iter()
                 .filter_map( |template| Template::new(template).ok() )
-                .map( |(input, output)| output )
+                .map( |(input, output)| (output, buffer.clone()) )
                 .collect();
-            Ok(Self{buffer, templates})
+            Ok(Self{templates})
         }
     }
 }
