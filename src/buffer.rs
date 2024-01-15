@@ -66,14 +66,14 @@ pub struct Buffer {
     pub userdata: Arc<UserData>,
     pub partdata: Arc<PartData>,
     #[serde(skip_deserializing)]
-    sort_index: Option<usize>,
+    pub sort_index: Option<usize>,
     #[serde(skip_deserializing)]
-    part_map: Option<HashMap<Value, Vec<Key>>>,
+    pub part_map: Option<HashMap<Value, Vec<Key>>>,
 }
 impl Buffer {
     pub fn list_all_reports(&self) -> Result<Box<[Value]>> {
         let reports_index = self
-            .index_part_headers("rep")?;
+            .index_part_headers("~rep")?;
         let mut listed_reports = self.partdata.parts
             .iter()
             .filter_map( |(_, value)| value.get(reports_index) )
