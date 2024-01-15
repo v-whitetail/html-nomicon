@@ -73,7 +73,7 @@ pub struct Buffer {
 impl Buffer {
     pub fn list_all_reports(&self) -> Result<Box<[Value]>> {
         let reports_index = self
-            .index_part_headers("rep")?;
+            .index_part_headers("~rep")?;
         let mut listed_reports = self.partdata.parts
             .iter()
             .filter_map( |(_, value)| value.get(reports_index) )
@@ -100,7 +100,7 @@ impl Buffer {
     }
     fn sort_index(mut self, sort_variable: Option<&str>) -> Result<Self> {
         if let Some(index) = sort_variable.and_then(
-            |variable| self.index_part_headers(variable.trim_matches('~')).ok()
+            |variable| self.index_part_headers(variable).ok()
             ) {
             self.sort_index = Some(index);
         };

@@ -1,12 +1,12 @@
 #![allow(unused, dead_code)]
-#![feature(slice_group_by)]
+#![feature(string_remove_matches)]
 
 pub mod cli;
 pub mod buffer;
 pub mod nomming;
 pub mod processing {
 
-    use crate::{ nomming::*, buffer::*, };
+    use crate::{ cli::*, buffer::*, nomming::*, };
     use nom::IResult;
     use rayon::prelude::*;
     use anyhow::{ Result, bail, anyhow, };
@@ -46,17 +46,29 @@ pub mod processing {
                 .collect();
             Ok(Self{root, templates, reports, resources})
         }
-        fn check_template(&self, stem: &str) -> Option<PathBuf> {
+        pub fn process(&self, json: &Buffer) -> Result<()> {
+            let listed_reports = json.list_all_reports()?
+                .par_iter()
+                .filter_map( |stem| self.check_template(stem) )
+                .filter_map( |(template, report)|
+                             Report::new(json, template, report).ok() )
+                .for_each( |report|{
+                    report.process();
+                });
+            Ok(())
+        }
+        fn check_template(&self, stem: &str) -> Option<(PathBuf, PathBuf)> {
             let template_path = self.root
                 .join("Templates")
                 .join(stem)
                 .with_extension("html");
-            let is_present = self.templates
-                .into_iter()
-                .fold(false, |is_present, path|
-                      max(template_path == *path, is_present));
-            if is_present { return Some(template_path)}
-            else { return None }
+            let report_path = self.root
+                .join("Reports")
+                .join(stem)
+                .with_extension("html");
+            if self.templates.contains(&template_path) {
+                Some((template_path, report_path))
+            } else { None }
         }
     }
 
@@ -98,20 +110,20 @@ pub mod processing {
 
 
     #[derive(Debug, Clone)]
-    pub struct Report<'b> {
+    pub struct Report {
         buffer: Buffer,
         raw_data: String,
-        report_path: &'b PathBuf,
-        template_path: &'b PathBuf,
+        report_path: PathBuf,
+        template_path: PathBuf,
     }
-    impl<'b> Report<'b> {
+    impl Report {
         pub fn new(
             buffer: &Buffer,
-            template_path: &'b PathBuf,
-            report_path: &'b PathBuf,
+            template_path: PathBuf,
+            report_path: PathBuf,
             ) -> Result<Self> {
             let buffer = buffer.clone();
-            let raw_data = read_to_string(template_path)?;
+            let raw_data = read_to_string(&template_path)?;
             Ok(Self{buffer, raw_data, template_path, report_path})
         }
         pub fn process(self) -> Result<()> {
@@ -133,7 +145,7 @@ pub mod processing {
                         .sorting_variable
                         .ok_or_else(||anyhow!("sorting varialbe not found"))?;
                     let t_pattern_row = template
-                        .sorting_row
+                        .pattern_row
                         .ok_or_else(||anyhow!("pattern row not found"))?;
                     let data_block = part_map
                         .iter()
@@ -142,7 +154,8 @@ pub mod processing {
                                 .replace(t_sorting_variable, sort_value);
                             let pattern_rows = part_ids
                                 .iter()
-                                .map( |part_id| {
+                                .enumerate()
+                                .map( |(row, part_id)| {
                                     let headers = &buffer
                                         .partdata
                                         .headers;
@@ -162,6 +175,8 @@ pub mod processing {
                                                 } else { row }
                                             });
                                     pattern_row
+                                        .replace("~n", &(row+1).to_string())
+                                        .replace("~id", part_id)
                                 }).collect::<String>();
                             let data_block = template.data_block
                                 .replace(t_sorting_row, &sorting_row)
@@ -186,7 +201,7 @@ pub mod processing {
                         }).collect::<String>();
                     data_block
                 };
-                let report = &self.raw_data
+                let report = &mut self.raw_data
                     .replace(template.title_block, &title_block)
                     .replace(template.data_block, &data_block);
                 write(self.report_path, &report)?;

@@ -6,7 +6,9 @@ fn main() -> Result<()> {
 
     let input = Input::get_with_timeout()?;
 
-    let _documents = Documents::new(&input.path)?;
+    let documents = Documents::new(&input.path)?;
+
+    documents.process(&input.json)?;
 
     Ok(())
 
