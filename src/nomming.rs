@@ -48,7 +48,7 @@ pub fn variable<'s>(s:&'s str, t:&'s str) -> IResult<&'s str, &'s str> {
 pub fn sorting_variable<'s>(s:&'s str) -> IResult<&'s str, &'s str> {
     preceded(
         take_until(PREFIX),
-        preceded(tag(PREFIX), alpha1)
+        recognize(preceded(tag(PREFIX), alpha1))
         )(s)
 }
 

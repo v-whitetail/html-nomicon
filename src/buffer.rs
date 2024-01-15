@@ -66,9 +66,9 @@ pub struct Buffer {
     pub userdata: Arc<UserData>,
     pub partdata: Arc<PartData>,
     #[serde(skip_deserializing)]
-    sort_index: Option<usize>,
+    pub sort_index: Option<usize>,
     #[serde(skip_deserializing)]
-    part_map: Option<HashMap<Value, Vec<Key>>>,
+    pub part_map: Option<HashMap<Value, Vec<Key>>>,
 }
 impl Buffer {
     pub fn list_all_reports(&self) -> Result<Box<[Value]>> {
@@ -100,7 +100,7 @@ impl Buffer {
     }
     fn sort_index(mut self, sort_variable: Option<&str>) -> Result<Self> {
         if let Some(index) = sort_variable.and_then(
-            |variable| self.index_part_headers(variable).ok()
+            |variable| self.index_part_headers(variable.trim_matches('~')).ok()
             ) {
             self.sort_index = Some(index);
         };
