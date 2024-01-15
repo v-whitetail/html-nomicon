@@ -11,7 +11,9 @@ pub mod processing {
     use rayon::prelude::*;
     use anyhow::{ Result, bail, anyhow, };
     use std::{
+        rc::Rc,
         cmp::max,
+        sync::Arc,
         path::PathBuf,
         fs::{ read_dir, read_to_string, },
     };
@@ -88,63 +90,5 @@ pub mod processing {
                 sorting_variable,
             }))
         }
-    }
-
-
-
-
-    #[derive(Debug)]
-    pub enum TemplateData<'b> {
-        Raw(Box<[(String, Buffer)]>),
-        Parsed(Box<[(Template<'b>, Buffer)]>),
-    }
-    impl<'b> TemplateData<'b> {
-        pub fn new(documents: &Documents, buffer: &'b Buffer) -> Result<Self> {
-            let templates = buffer
-                .list_all_reports()?
-                .iter() 
-                .filter_map( |stem| documents.check_template(stem) )
-                .filter_map( |path| read_to_string(path).ok() )
-                .map( |file| (file, buffer.clone()) )
-                .collect();
-            Ok(Self::Raw(templates))
-        }
-        pub fn parse(&'b self) -> Result<Self> {
-            match self {
-                Self::Raw(raw_templates) => {
-                    let templates = raw_templates
-                        .par_iter()
-                        .filter_map(|(template, buffer)|
-                                     Template::new(template)
-                                     .ok()
-                                     .and_then( |(_, template)|
-                                                Some((template, buffer))
-                                              )
-                                   )
-                        .filter_map( |(template, buffer)|
-                                     buffer
-                                     .clone()
-                                     .sort(template.sorting_variable)
-                                     .ok()
-                                     .and_then( |buffer|
-                                                Some((template, buffer))
-                                              )
-                                   )
-                        .collect();
-                    Ok(Self::Parsed(templates))
-                },
-                _ => bail!("attempted to re-parse {self:#?}"),
-            }
-        }
-    }
-
-
-
-
-    pub struct BatchProcessor<'b> {
-        raw_data: TemplateData<'b>,
-        parsed_data: TemplateData<'b>,
-    }
-    impl<'b> BatchProcessor<'b> {
     }
 }
