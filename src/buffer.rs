@@ -1,7 +1,7 @@
 use std::{
     ops::Deref,
     sync::Arc,
-    collections::HashMap,
+    collections::BTreeMap,
 };
 use rayon::prelude::*;
 use serde::{ Serialize, Deserialize };
@@ -11,14 +11,14 @@ pub type Key = Arc<str>;
 pub type List = Box<[Value]>;
 pub type Value = Arc<str>;
 pub type MixedList = Box<[Variable]>;
-pub type UserData = HashMap<Key, Value>;
-pub type ProjectData = HashMap<Key, Value>;
+pub type UserData = BTreeMap<Key, Value>;
+pub type ProjectData = BTreeMap<Key, Value>;
 
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PartData {
     pub headers: List,
-    pub parts: HashMap<Key, MixedList>,
+    pub parts: BTreeMap<Key, MixedList>,
 }
 
 
@@ -68,7 +68,7 @@ pub struct Buffer {
     #[serde(skip_deserializing)]
     pub sort_index: Option<usize>,
     #[serde(skip_deserializing)]
-    pub part_map: Option<HashMap<Value, Vec<Key>>>,
+    pub part_map: Option<BTreeMap<Value, Vec<Key>>>,
 }
 impl Buffer {
     pub fn list_all_reports(&self) -> Result<Box<[Value]>> {
@@ -117,7 +117,7 @@ impl Buffer {
             sort_values.dedup();
             let part_map = sort_values
                 .into_iter()
-                .fold( HashMap::new(), |mut part_map, sort_key| {
+                .fold( BTreeMap::new(), |mut part_map, sort_key| {
                     part_map.insert(sort_key, Vec::new());
                     part_map
                 });
