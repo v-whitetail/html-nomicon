@@ -129,14 +129,6 @@ pub mod processing {
         pub fn process(self) -> Result<()> {
             if let Ok((_, template)) = Template::new(&self.raw_data) {
                 let buffer = self.buffer.sort(template.sorting_variable)?;
-                let title_block = buffer.userdata
-                    .iter()
-                    .chain(buffer.projdata.iter())
-                    .fold(
-                        template.title_block.to_owned(),
-                        |mut block, (k, v)| {
-                            block.replace(&**k, &*v)
-                        });
                 let data_block = if let Some(part_map) = buffer.part_map {
                     let t_sorting_row = template
                         .sorting_row
@@ -202,8 +194,14 @@ pub mod processing {
                     data_block
                 };
                 let report = &mut self.raw_data
-                    .replace(template.data_block, &data_block)
-                    .replace(template.title_block, &title_block);
+                    .replace(template.data_block, &data_block);
+                let report = buffer.userdata
+                    .iter().chain(buffer.projdata.iter())
+                    .fold(
+                        report.to_owned(),
+                        |report, (k, v)| {
+                            report.replace(&**k, &*v)
+                        });
                 write(self.report_path, &report)?;
                 Ok(())
             }
