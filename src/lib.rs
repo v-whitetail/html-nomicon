@@ -202,8 +202,8 @@ pub mod processing {
                     data_block
                 };
                 let report = &mut self.raw_data
-                    .replace(template.title_block, &title_block)
-                    .replace(template.data_block, &data_block);
+                    .replace(template.data_block, &data_block)
+                    .replace(template.title_block, &title_block);
                 write(self.report_path, &report)?;
                 Ok(())
             }
