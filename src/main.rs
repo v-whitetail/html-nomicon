@@ -8,6 +8,8 @@ fn main() -> Result<()> {
 
     let _documents = Documents::new(&input.path)?;
 
+    println!("{_documents:#?}");
+
     Ok(())
 
 }

@@ -15,6 +15,7 @@ type PySet = BTreeSet<PyStr>;
 type PyDict = BTreeMap<PyStr, PyValue>;
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Clone)]
+#[serde(untagged)]
 enum PyValue {
     Str(PyStr),
     Int(PyInt),

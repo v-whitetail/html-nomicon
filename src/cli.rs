@@ -13,7 +13,7 @@ use crate::buffer::Buffer;
 
 pub const TIMEOUT: Duration = Duration::from_secs(16);
 
-#[derive(Debug,Parser)]
+#[derive(Debug, Parser)]
 pub struct Cli {
     /// root of the project directory (./ indicates the current dir)
     pub path: PathBuf,
@@ -30,6 +30,7 @@ impl Cli{
     }
 }
 
+#[derive(Debug)]
 pub struct Input {
     pub path: PathBuf,
     pub json: Buffer,
