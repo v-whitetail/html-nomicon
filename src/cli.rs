@@ -9,15 +9,9 @@ use std::{
     thread::spawn,
     sync::mpsc::{ RecvTimeoutError, channel, },
 };
-
-
-
+use crate::buffer::Buffer;
 
 pub const TIMEOUT: Duration = Duration::from_secs(16);
-
-
-
-
 
 #[derive(Debug,Parser)]
 pub struct Cli {
@@ -30,20 +24,15 @@ pub struct Cli {
     #[arg(short,long,default_value=None)]
     pub file: Option<PathBuf>,
 }
-
 impl Cli{
     pub fn args() -> Self {
         Cli::parse()
     }
 }
 
-
-
-
-
 pub struct Input {
     pub path: PathBuf,
-    pub json: serde_json::Map<String, serde_json::Value>,
+    pub json: Buffer,
 }
 
 impl Input {
@@ -67,10 +56,6 @@ impl Input {
 
 }
 
-
-
-
-
 enum Data {
     String(String),
     File(PathBuf),
@@ -90,15 +75,15 @@ impl Data {
         }
     }
 
-    fn string (s: &str) -> Result<serde_json::Map<String, serde_json::Value>> {
+    fn string (s: &str) -> Result<Buffer> {
         Ok(from_str(s)?)
     }
 
-    fn file (file: PathBuf) -> Result<serde_json::Map<String, serde_json::Value>> {
+    fn file (file: PathBuf) -> Result<Buffer> {
         Ok(from_str(&read_to_string(file)?)?)
     }
 
-    fn io (mut stdin: Stdin) -> Result<serde_json::Map<String, serde_json::Value>> {
+    fn io (mut stdin: Stdin) -> Result<Buffer> {
         let mut buffer = String::new();
         stdin.read_to_string(&mut buffer)?;
         Ok(from_str(&buffer)?)

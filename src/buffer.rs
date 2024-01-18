@@ -54,8 +54,10 @@ impl PartData {
             .ok_or_else(|| anyhow!("\"{h}\" not found in headers") )?;
         let sorted = self.parts.iter()
             .fold( PyDict::new(), |mut dict, (key, value)| {
-                let sort_value = value.index_list(header_index).and_then(
-                    |value| value.to_str()).unwrap_or(key.clone());
+                let sort_value = value
+                    .index_list(header_index)
+                    .and_then(
+                    |value| value.to_str()).unwrap_or_else(||key.clone());
                 if let Some(prev) = dict.get_mut(&sort_value) {
                     prev.insert_list(PyValue::Str(key.clone()));
                 } else {
