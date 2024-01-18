@@ -1,144 +1,75 @@
 use std::{
     ops::Deref,
     sync::Arc,
-    collections::BTreeMap,
+    borrow::Borrow,
+    collections::*,
 };
 use rayon::prelude::*;
 use serde::{ Serialize, Deserialize };
 use anyhow::{ Result, anyhow, };
 
-pub type Key = Arc<str>;
-pub type List = Box<[Value]>;
-pub type Value = Arc<str>;
-pub type MixedList = Box<[Variable]>;
-pub type UserData = BTreeMap<Key, Value>;
-pub type ProjectData = BTreeMap<Key, Value>;
+type PyStr = Arc<str>;
+type PyInt = Arc<isize>;
+type PyList = Vec<PyValue>;
+type PySet = BTreeSet<PyStr>;
+type PyDict = BTreeMap<PyStr, PyValue>;
 
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PartData {
-    pub headers: List,
-    pub parts: BTreeMap<Key, MixedList>,
+#[derive(Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Clone)]
+enum PyValue {
+    Str(PyStr),
+    Int(PyInt),
+    List(PyList),
+    Set(PySet),
+    Dict(PyDict),
 }
-
-
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Variable {
-    Name(Value),
-    List(List),
-}
-impl Variable {
-    pub fn as_name(&self) -> Option<Value> {
-        match self {
-            Self::Name(value) => Some(value.clone()),
-            _ => None,
-        }
+impl PyValue {
+    fn is_str(&self)  -> bool { if let PyValue::Str(_)  = self { true } else { false } }
+    fn is_int(&self)  -> bool { if let PyValue::Int(_)  = self { true } else { false } }
+    fn is_list(&self) -> bool { if let PyValue::List(_) = self { true } else { false } }
+    fn is_set(&self)  -> bool { if let PyValue::Set(_)  = self { true } else { false } }
+    fn is_dict(&self) -> bool { if let PyValue::Dict(_) = self { true } else { false } }
+    fn to_str(&self)  -> Option<PyStr>  { if let PyValue::Str(inner)  = self { Some(inner.clone()) } else { None } }
+    fn to_int(&self)  -> Option<PyInt>  { if let PyValue::Int(inner)  = self { Some(inner.clone()) } else { None } }
+    fn to_list(&self) -> Option<PyList> { if let PyValue::List(inner) = self { Some(inner.clone()) } else { None } }
+    fn to_set(&self)  -> Option<PySet>  { if let PyValue::Set(inner)  = self { Some(inner.clone()) } else { None } }
+    fn to_dict(&self) -> Option<PyDict> { if let PyValue::Dict(inner) = self { Some(inner.clone()) } else { None } }
+    fn index_list(&self, i: usize) -> Option<&Self> {
+        if let Self::List(inner) = self { inner.get(i) } else { None }
     }
-    pub fn as_list(&self) -> Option<List> {
-        match self {
-            Self::List(list) => Some(list.clone()),
-            _ => None,
-        }
-    }
-    pub fn is_name(&self) -> bool {
-        match self {
-            Self::Name(_) => true,
-            _ => false,
-        }
-    }
-    pub fn is_list(&self) -> bool {
-        match self {
-            Self::List(_) => true,
-            _ => false,
-        }
+    fn insert_list(&mut self, v: Self) -> bool {
+        if let Self::List(inner) = self { inner.push(v); true } else { false }
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct PartData {
+    headers: PyList,
+    groups: PyDict,
+    parts: PyDict,
+}
+impl PartData {
+    fn group_by_header(&self, h: &str) -> Result<PyDict> {
+        let header_index = self.headers.iter()
+            .position( |v| PyValue::Str(h.into()) == *v )
+            .ok_or_else(|| anyhow!("\"{h}\" not found in headers") )?;
+        let sorted = self.parts.iter()
+            .fold( PyDict::new(), |mut dict, (key, value)| {
+                let sort_value = value.index_list(header_index).and_then(
+                    |value| value.to_str()).unwrap_or(key.clone());
+                if let Some(prev) = dict.get_mut(&sort_value) {
+                    prev.insert_list(PyValue::Str(key.clone()));
+                } else {
+                    dict.insert(sort_value, PyValue::Str(key.clone()));
+                };
+                dict
+            });
+        return Ok(sorted)
+    }
+}
 
-
-
-
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct Buffer {
-    pub projdata: Arc<ProjectData>,
-    pub userdata: Arc<UserData>,
-    pub partdata: Arc<PartData>,
-    #[serde(skip_deserializing)]
-    pub sort_index: Option<usize>,
-    #[serde(skip_deserializing)]
-    pub part_map: Option<BTreeMap<Value, Vec<Key>>>,
-}
-impl Buffer {
-    pub fn list_all_reports(&self) -> Result<Box<[Value]>> {
-        let reports_index = self
-            .index_part_headers("~rep")?;
-        let mut listed_reports = self.partdata.parts
-            .iter()
-            .filter_map( |(_, value)| value.get(reports_index) )
-            .filter_map( |reports| reports.as_list() )
-            .map( |list| list.as_ref().to_owned() )
-            .flatten()
-            .collect::<Vec<_>>();
-        listed_reports.sort();
-        listed_reports.dedup();
-        Ok(listed_reports.into())
-    }
-    pub fn sort(self, sort_variable: Option<&str>) -> Result<Self> {
-        let sorted = self.clone()
-            .sort_index(sort_variable)?
-            .part_map_keys()?
-            .part_map_values()?;
-        Ok(sorted)
-    }
-    fn index_part_headers(&self, value: &str) -> Result<usize> {
-        self.partdata.headers
-            .iter()
-            .position( |v| **v == *value )
-            .ok_or_else( || anyhow!("\"{value:#?}\" not found in headers") )
-    }
-    fn sort_index(mut self, sort_variable: Option<&str>) -> Result<Self> {
-        if let Some(index) = sort_variable.and_then(
-            |variable| self.index_part_headers(variable).ok()
-            ) {
-            self.sort_index = Some(index);
-        };
-        Ok(self)
-    }
-    fn part_map_keys(mut self) -> Result<Self> {
-        if let Some(sort_index) = self.sort_index {
-            let mut sort_values = self.partdata.parts
-                .iter()
-                .filter_map( |(_, value)| value.get(sort_index) )
-                .filter_map( |variable| variable.as_name() )
-                .collect::<Vec<_>>();
-            sort_values.sort();
-            sort_values.dedup();
-            let part_map = sort_values
-                .into_iter()
-                .fold( BTreeMap::new(), |mut part_map, sort_key| {
-                    part_map.insert(sort_key, Vec::new());
-                    part_map
-                });
-            self.part_map = Some(part_map);
-        };
-        Ok(self)
-    }
-    fn part_map_values(mut self) -> Result<Self> {
-        if let Some(ref mut part_map) = self.part_map {
-            part_map
-                .par_iter_mut()
-                .for_each( |(map_key, mut map_values)| {
-                    self.partdata.parts
-                        .iter()
-                        .for_each( |(part_key, part_values)| {
-                            if part_values.contains(&Variable::Name(map_key.clone())) {
-                                map_values.push(part_key.clone());
-                            };
-                        })
-                });
-        }
-        Ok(self)
-    }
+    project_data: PyDict,
+    user_data: PyDict,
+    part_data: PartData,
 }
