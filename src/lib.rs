@@ -179,7 +179,8 @@ pub mod processing {
                 } else {
                     let data_block = buffer.partdata.parts
                         .iter()
-                        .map( |(part_id, values)| {
+                        .enumerate()
+                        .map( |(row, (part_id, values))| {
                             buffer.partdata.headers
                                 .iter()
                                 .zip(values.iter())
@@ -189,7 +190,10 @@ pub mod processing {
                                         if let Some(v) = v.as_name() {
                                             block.replace(&**k, &*v)
                                         } else { block }
-                                    })
+                                    }
+                                    .replace("~n", &(row+1).to_string())
+                                    .replace("~id", part_id)
+                                    )
                         }).collect::<String>();
                     data_block
                 };
