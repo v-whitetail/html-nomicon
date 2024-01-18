@@ -6,7 +6,6 @@ pub mod buffer;
 pub mod processing {
 
     use crate::{ cli::*, buffer::*, };
-    use nom::IResult;
     use rayon::prelude::*;
     use anyhow::{ Result, bail, anyhow, };
     use std::{
