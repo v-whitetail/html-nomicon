@@ -76,3 +76,14 @@ pub struct Buffer {
     user_data: PyDict,
     part_data: PartData,
 }
+impl Buffer {
+    pub fn globals(&self) -> Box<[(PyStr, PyStr)]> {
+        self.project_data
+            .iter().chain(self.user_data.iter())
+            .filter_map(
+                |(key, value)| value.to_str().and_then(
+                    |v| Some((key.to_owned(), v))
+                    ))
+            .collect()
+    }
+}
