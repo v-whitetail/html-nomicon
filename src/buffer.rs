@@ -82,8 +82,21 @@ impl Buffer {
             .iter().chain(self.user_data.iter())
             .filter_map(
                 |(key, value)| value.to_str().and_then(
-                    |v| Some((key.to_owned(), v))
+                    |value| Some((key.clone(), value.clone()))
                     ))
+            .collect()
+    }
+    pub fn global_keys(&self) -> Box<[PyStr]> {
+        self.project_data
+            .iter().chain(self.user_data.iter())
+            .map( |(key, _)| key.clone())
+            .collect()
+    }
+    pub fn global_values(&self) -> Box<[PyStr]> {
+        self.project_data
+            .iter().chain(self.user_data.iter())
+            .filter_map( |(_, values)| values.to_str())
+            .map( |value| value.clone())
             .collect()
     }
 }

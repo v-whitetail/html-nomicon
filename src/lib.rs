@@ -1,5 +1,5 @@
 #![allow(unused, dead_code)]
-#![feature(iterator_try_collect)]
+#![feature(pattern)]
 
 pub mod cli;
 pub mod buffer;
@@ -15,6 +15,7 @@ pub mod processing {
         sync::Arc,
         cell::RefCell,
         default::Default,
+        str::pattern::Pattern,
         io::{ self, Write, },
         fs::{ write, read_dir, },
         path::{ Path, PathBuf, },
@@ -78,26 +79,24 @@ pub mod processing {
         }
         pub fn replace_globals(&self, b: &Buffer) {
             let globals = b.globals();
-            let keys = globals.iter().map( |(key, _)| &**key);
-            let nodes = str_dfs(
+            let nodes = dfs(
                 &self.template_dom.document,
-                |n: &Rc<Node>| multi_str_recognize(n, keys.clone())
+                |n: &Rc<Node>| as_text_node_with_any(n, b.global_keys().iter())
                 );
             globals.iter().for_each(
                 |(key, value)| { nodes.iter().for_each(
                         |node| {
-                            let sub = node.borrow().replace(&**key, &**value);
-                            *node.borrow_mut() = StrTendril::from_slice(&sub);
+                            let text = as_text(node).expect("");
+                            let sub = text.borrow().replace(&**key, &**value);
+                            *text.borrow_mut() = StrTendril::from_slice(&sub);
                         });
                 });
         }
     }
 
-    type Content = RefCell<StrTendril>;
-    type Attributes = RefCell<Vec<Attribute>>;
 
-    fn dfs<P>(node: &Rc<Node>, predicate: P) -> Vec<Node>
-        where P: Fn(&Rc<Node>) -> Option<Node> + Copy
+    fn dfs<P>(node: &Rc<Node>, predicate: P) -> Vec<Rc<Node>>
+        where P: Fn(&Rc<Node>) -> Option<&Rc<Node>> + Copy
     {
         let mut set = node.children
             .borrow()
@@ -105,61 +104,74 @@ pub mod processing {
             .map( |child| dfs(child, predicate) )
             .flatten()
             .collect::<Vec<_>>();
-        if let Some(data) = predicate(node) { set.push(data); }
+        if let Some(data) = predicate(node) { set.push(data.clone()); }
         return set;
     }
 
-    fn str_dfs<P>(node: &Rc<Node>, predicate: P) -> Vec<Content>
-        where P: Fn(&Rc<Node>) -> Option<Content> + Copy
-    {
-        let mut set = node.children
-            .borrow()
-            .iter()
-            .map( |child| str_dfs(child, predicate) )
-            .flatten()
-            .collect::<Vec<_>>();
-        if let Some(data) = predicate(node) { set.push(data); }
-        return set;
-    }
-
-    fn str_tendril(node: &Rc<Node>) -> Option<Content> {
+    type Content = RefCell<StrTendril>;
+    fn as_text_node(node: &Rc<Node>) -> Option<&Rc<Node>> {
         if let NodeData::Text { contents } = &node.data {
-            Some( contents.clone() )
+            Some( node )
         } else { None }
     }
 
-    fn str_recognize(node: &Rc<Node>, tag: &str) -> Option<Content> {
-        if let Some(content) = str_tendril(node) {
-            content.borrow().contains(tag).then_some( content.clone() )
+    fn as_text(node: &Rc<Node>) -> Option<&Content> {
+        if let NodeData::Text { contents } = &node.data {
+            Some( contents )
         } else { None }
     }
 
-    fn multi_str_recognize<'t, I>(node: &Rc<Node>, tags: I) -> Option<Content>
-        where I: IntoIterator<Item=&'t str>
-    {
-        if let Some(content) = str_tendril(node) {
-            tags.into_iter()
-                .filter( |tag| content.borrow().contains(tag))
-                .fuse()
-                .next()
-                .and_then(|_| Some(content.clone()) )
+    fn as_text_node_with<'a>(node: &'a Rc<Node>, tag: &Arc<str>)-> Option<&'a Rc<Node>> {
+        if let Some(text) = as_text(node) {
+            if text.borrow().contains(&**tag) {
+                Some(node)
+            } else { None }
         } else { None }
     }
 
-    fn attr_tendril(node: &Rc<Node>) -> Option<Attributes> {
+    fn as_text_node_with_any<'a, T>(node: &'a Rc<Node>, tags: T) -> Option<&'a Rc<Node>>
+        where T: Iterator<Item=&'a Arc<str>>
+        {
+            for tag in tags {
+                if let Some(text) = as_text(node) {
+                    if text.borrow().contains(&**tag) { return Some(node) };
+                };
+            };
+            return None
+        }
+
+    type Attributes = RefCell<Vec<Attribute>>;
+    fn as_attrs_node(node: &Rc<Node>) -> Option<&Rc<Node>> {
         if let NodeData::Element { attrs, .. } = &node.data {
-            Some( attrs.clone() )
+            Some( node )
         } else { None }
     }
 
-//    fn attr_recognize(node: &Rc<Node>, tag: &str) -> Option<Content> {
-//        if let Some(attributes) = attr_tendril(node) {
-//            attributes.borrow().iter().filter_map(
-//                |attr| attr.value.contains(tag).then_some( attr.value.clone() )
-//                )
-//                .fuse()
-//                .next()
-//        } else { None }
-//    }
+    fn as_attrs(node: &Rc<Node>) -> Option<&Attributes> {
+        if let NodeData::Element { attrs, .. } = &node.data {
+            Some( &attrs )
+        } else { None }
+    }
 
+    fn as_attr_node_with<'a>(node: &'a Rc<Node>, tag: Arc<str>) -> Option<&'a Rc<Node>> {
+        if let Some(attrs) = as_attrs(node) {
+            for attr in attrs.borrow().iter() {
+                if attr.value.contains(&*tag) { return Some(node) };
+            };
+        };
+        return None
+    }
+
+    fn as_attr_node_with_any<'a, T>(node: &'a Rc<Node>, tags: T)-> Option<&'a Rc<Node>>
+        where T: Iterator<Item=Arc<str>>
+        {
+            for tag in tags {
+                if let Some(attrs) = as_attrs(node) {
+                    for attr in attrs.borrow().iter() {
+                        if attr.value.contains(&*tag) { return Some(node) };
+                    };
+                };
+            };
+            return None
+        }
 }
